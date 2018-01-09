@@ -32,29 +32,29 @@ func (mm *moduleManager) loadPlainJavascript(file, path string, vm *goja.Runtime
 	}
 }
 
-func (mm *moduleManager) registerDefaults(module Module) error {
-	console := module.getVm().NewObject()
+func (mm *moduleManager) registerDefaults(bundle Bundle) error {
+	console := bundle.getVm().NewObject()
 	if err := console.Set("log", func(msg string) {
 		fmt.Println(msg)
 	}); err != nil {
 		return err
 	}
-	module.getVm().Set("console", console)
-	module.getVm().Set("setTimeout", func(call goja.FunctionCall) goja.Value {
+	bundle.getVm().Set("console", console)
+	bundle.getVm().Set("setTimeout", func(call goja.FunctionCall) goja.Value {
 		return goja.Null()
 	})
-	if _, err := mm.loadPlainJavascript("js/kernel/promise.js", mm.baseDir(), module.getVm()); err != nil {
+	if _, err := mm.loadPlainJavascript("js/kernel/promise.js", mm.baseDir(), bundle.getVm()); err != nil {
 		return err
 	}
-	if _, err := mm.loadPlainJavascript("js/kernel/system.js", mm.baseDir(), module.getVm()); err != nil {
+	if _, err := mm.loadPlainJavascript("js/kernel/system.js", mm.baseDir(), bundle.getVm()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (mm *moduleManager) registerSystemObject(module, parentModule Module) error {
+func (mm *moduleManager) registerSystemObject(bundle, parentBundle Bundle) error {
 	mm.pushModule(module)
-	system := module.NewObject()
+	system := bundle.NewObject()
 	if err := system.Set("register", mm.kernel.generateSystemRegister(module, parentModule)); err != nil {
 		return errors.New(err)
 	}

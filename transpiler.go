@@ -4,15 +4,14 @@ import (
 	"github.com/dop251/goja"
 	"path/filepath"
 	"os"
-	"fmt"
 	"io/ioutil"
 	"encoding/json"
 	"runtime"
-	"taurus/release"
 	"github.com/go-errors/errors"
+	"taurus/integration/debug"
 )
 
-const cache_json_file = "cache.json"
+const cacheJsonFile = "cache.json"
 
 type transpiler struct {
 	vm                *goja.Runtime
@@ -23,7 +22,7 @@ type transpiler struct {
 func newTranspiler(kernel *kernel) (*transpiler, error) {
 	var modules []transpiledModule
 
-	cacheFile := filepath.Join(kernel.transpilerCacheDir, cache_json_file)
+	cacheFile := filepath.Join(kernel.transpilerCacheDir, cacheJsonFile)
 	if file, err := ioutil.ReadFile(cacheFile); err == nil {
 		json.Unmarshal(file, &modules)
 	}
@@ -46,9 +45,7 @@ func newTranspiler(kernel *kernel) (*transpiler, error) {
 
 func (t *transpiler) initialize() {
 	if t.vm == nil {
-		if release.DEBUG_BUILD {
-			fmt.Println("Setting up typescript transpiler...")
-		}
+		debug.DebugLog("Setting up typescript transpiler...")
 
 		t.vm = goja.New()
 		if _, err := t.loadScript("js/typescript"); err != nil {
@@ -83,9 +80,7 @@ func (t *transpiler) transpileFile(path string) (*string, error) {
 	module := t.findTranspiledModule(path)
 
 	if fileExists(cacheFile) && module != nil && module.Checksum == checksum {
-		if release.DEBUG_BUILD {
-			fmt.Println(fmt.Sprintf("Already transpiled %s as %s...", path, cacheFile))
-		}
+		debug.DebugLog("Already transpiled %s as %s...", path, cacheFile)
 		return nil, nil
 	}
 
@@ -96,9 +91,7 @@ func (t *transpiler) transpileFile(path string) (*string, error) {
 	// Remove old module definition
 	t.removeTranspiledModule(module)
 
-	if release.DEBUG_BUILD {
-		fmt.Println(fmt.Sprintf("Transpiling %s to %s...", path, cacheFile))
-	}
+	debug.DebugLog("Transpiling %s to %s...", path, cacheFile)
 
 	if source, err := t._transpileSource(code); err != nil {
 		return nil, err
@@ -236,7 +229,7 @@ func (t *transpiler) addTranspiledModule(path, cacheFile, code string) error {
 }
 
 func (t *transpiler) storeModuleCacheInformation() error {
-	file := filepath.Join(t.kernel.transpilerCacheDir, cache_json_file)
+	file := filepath.Join(t.kernel.transpilerCacheDir, cacheJsonFile)
 	os.Remove(file)
 	if data, err := json.Marshal(t.transpiledModules); err != nil {
 		return err

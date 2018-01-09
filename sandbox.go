@@ -8,8 +8,9 @@ import (
 	"github.com/go-errors/errors"
 )
 
-type sandbox struct {
+type moduleImpl struct {
 	kernel             *kernel
+	bundle             *moduleBundle
 	vm                 *goja.Runtime
 	privileged         bool
 	id                 string
@@ -24,7 +25,7 @@ type sandbox struct {
 	adapter            *adapter
 }
 
-func newSandbox(kernel *kernel, id, name, origin string, privileged bool, parentModule Module) (*sandbox, error) {
+func newSandbox(kernel *kernel, id, name, origin string, privileged bool, parentModule Module) (*moduleImpl, error) {
 	path := filepath.Dir(origin)
 	filename := filepath.Base(origin)
 
@@ -40,7 +41,7 @@ func newSandbox(kernel *kernel, id, name, origin string, privileged bool, parent
 		return nil, errors.New("Given origin location cannot be empty when creating a new script sandbox")
 	}
 
-	sandbox := &sandbox{
+	module := &moduleImpl{
 		kernel:     kernel,
 		vm:         goja.New(),
 		privileged: privileged,
@@ -52,40 +53,40 @@ func newSandbox(kernel *kernel, id, name, origin string, privileged bool, parent
 		},
 	}
 
-	sandbox.exports = sandbox.vm.NewObject()
-	sandbox.propertyDefiner = prepareDefineProperty(sandbox.vm)
-	sandbox.constantDefiner = prepareDefineConstant(sandbox.vm)
-	sandbox.propertyDescriptor = preparePropertyDescriptor(sandbox.vm)
+	module.exports = module.vm.NewObject()
+	module.propertyDefiner = prepareDefineProperty(module.vm)
+	module.constantDefiner = prepareDefineConstant(module.vm)
+	module.propertyDescriptor = preparePropertyDescriptor(module.vm)
 
-	if err := kernel.mm.registerDefaults(sandbox); err != nil {
+	if err := kernel.mm.registerDefaults(module); err != nil {
 		return nil, err
 	}
-	if err := kernel.mm.registerSystemObject(sandbox, parentModule); err != nil {
+	if err := kernel.mm.registerSystemObject(module, parentModule); err != nil {
 		return nil, err
 	}
 
-	adapter, err := newAdapter(kernel, sandbox)
+	adapter, err := newAdapter(kernel, module)
 	if err != nil {
 		return nil, errors.New(err)
 	}
-	sandbox.adapter = adapter
+	module.adapter = adapter
 
-	return sandbox, nil
+	return module, nil
 }
 
-func (s *sandbox) ID() string {
+func (s *moduleImpl) ID() string {
 	return s.id
 }
 
-func (s *sandbox) Name() string {
+func (s *moduleImpl) Name() string {
 	return s.name
 }
 
-func (s *sandbox) Origin() Origin {
+func (s *moduleImpl) Origin() Origin {
 	return s.origin
 }
 
-func (s *sandbox) Exports() map[string]interface{} {
+func (s *moduleImpl) Exports() map[string]interface{} {
 	c := make(map[string]interface{}, len(s.exported))
 	for k, v := range s.exported {
 		c[k] = v
@@ -93,60 +94,60 @@ func (s *sandbox) Exports() map[string]interface{} {
 	return c
 }
 
-func (s *sandbox) Privileged() bool {
+func (s *moduleImpl) Privileged() bool {
 	return s.privileged
 }
 
-func (s *sandbox) SecurityInterceptor() SecurityInterceptor {
+func (s *moduleImpl) SecurityInterceptor() SecurityInterceptor {
 	return s.interceptor
 }
 
-func (s *sandbox) NewObject() *goja.Object {
+func (s *moduleImpl) NewObject() *goja.Object {
 	return s.vm.NewObject()
 }
 
-func (s *sandbox) Define(property string, value interface{}) {
+func (s *moduleImpl) Define(property string, value interface{}) {
 	s.vm.Set(property, value)
 }
 
-func (s *sandbox) DefineProperty(object *goja.Object, property string, value interface{}, getter Getter, setter Setter) {
+func (s *moduleImpl) DefineProperty(object *goja.Object, property string, value interface{}, getter Getter, setter Setter) {
 	//s.propertyDefiner(object, property, value, getter, setter)
 	callPropertyDefiner(s.propertyDefiner, s.vm, object, property, value, getter, setter)
 }
 
-func (s *sandbox) DefineConstant(object *goja.Object, constant string, value interface{}) {
+func (s *moduleImpl) DefineConstant(object *goja.Object, constant string, value interface{}) {
 	s.constantDefiner(object, constant, value)
 }
 
-func (s *sandbox) PropertyDescriptor(object *goja.Object, property string) (interface{}, bool, Getter, Setter) {
+func (s *moduleImpl) PropertyDescriptor(object *goja.Object, property string) (interface{}, bool, Getter, Setter) {
 	descriptor := s.propertyDescriptor(object, property)
 	return propertyDescriptor(s.vm, descriptor.ToObject(s.vm))
 }
 
-func (s *sandbox) Export(value goja.Value, target interface{}) error {
+func (s *moduleImpl) Export(value goja.Value, target interface{}) error {
 	return s.vm.ExportTo(value, target)
 }
 
-func (s *sandbox) ToValue(value interface{}) goja.Value {
+func (s *moduleImpl) ToValue(value interface{}) goja.Value {
 	return s.vm.ToValue(value)
 }
 
-func (s *sandbox) FreezeObject(object *goja.Object) {
+func (s *moduleImpl) FreezeObject(object *goja.Object) {
 	_freezeObject(s.ToValue(object), s.vm)
 }
 
-func (s *sandbox) getExports() *goja.Object {
+func (s *moduleImpl) getExports() *goja.Object {
 	return s.exports
 }
 
-func (s *sandbox) setName(name string) {
+func (s *moduleImpl) setName(name string) {
 	s.name = name
 }
 
-func (s *sandbox) getVm() *goja.Runtime {
+func (s *moduleImpl) getVm() *goja.Runtime {
 	return s.vm
 }
 
-func (s *sandbox) getAdapter() *adapter {
+func (s *moduleImpl) getAdapter() *adapter {
 	return s.adapter
 }

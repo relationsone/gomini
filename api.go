@@ -24,13 +24,23 @@ type Origin interface {
 }
 
 type Bundle interface {
-
+	ID() string
+	Name() string
+	Path() string
+	Exports() map[string]interface{}
+	Privileged() bool
+	SecurityInterceptor() SecurityInterceptor
+	getExports() *goja.Object
+	setName(name string)
+	getVm() *goja.Runtime
+	getAdapter() *adapter
 }
 
 type Module interface {
 	ID() string
 	Name() string
 	Origin() Origin
+	Bundle() Bundle
 	Exports() map[string]interface{}
 	Privileged() bool
 	SecurityInterceptor() SecurityInterceptor
