@@ -28,32 +28,32 @@ type adapter struct {
 	adaptingCall adapter_function
 }
 
-func newAdapter(kernel *kernel, module Module) (*adapter, error) {
+func newAdapter(kernel *kernel, bundle Bundle) (*adapter, error) {
 	filename := findScriptFile("js/kernel/adapter.js", kernel.baseDir)
 	source, err := kernel.loadSource(filename)
 	if err != nil {
 		return nil, errors.New(err)
 	}
 
-	value, err := prepareJavascript(filename, source, module.getVm())
+	value, err := prepareJavascript(filename, source, bundle.getSandbox())
 	if err != nil {
 		return nil, errors.New(err)
 	}
 
 	var adaptingCall adapter_function
 	//var adaptingCall goja.Callable
-	err = module.getVm().ExportTo(value, &adaptingCall)
+	err = bundle.getSandbox().ExportTo(value, &adaptingCall)
 	if err != nil {
 		return nil, err
 	}
 
 	return &adapter{
-		vm:           module.getVm(),
+		vm:           bundle.getSandbox(),
 		adaptingCall: adaptingCall,
 	}, nil
 }
 
-func (adapter *adapter) adapt(source, target *goja.Object, origin Module, caller Module) error {
+func (adapter *adapter) adapt(source, target *goja.Object, origin Bundle, caller Bundle) error {
 	var adaptnull _adaptnull = func(property string) error {
 		return target.Set(property, goja.Null())
 	}
@@ -92,7 +92,7 @@ func (adapter *adapter) adapt(source, target *goja.Object, origin Module, caller
 				panic(err)
 			}
 
-			instance := s.ToObject(origin.getVm())
+			instance := s.ToObject(origin.getSandbox())
 			newObject := caller.NewObject()
 			if err := adapter.adapt(instance, newObject, origin, caller); err != nil {
 				panic(err)
@@ -101,7 +101,7 @@ func (adapter *adapter) adapt(source, target *goja.Object, origin Module, caller
 			return newObject
 		}
 
-		proxy := caller.getVm().CreateFunctionProxy(call, construct)
+		proxy := caller.getSandbox().CreateFunctionProxy(call, construct)
 		return target.Set(property, proxy)
 	}
 
@@ -118,7 +118,7 @@ func (adapter *adapter) adapt(source, target *goja.Object, origin Module, caller
 	var adaptobject _adaptobject = func(property string, object goja.Value) error {
 		t := caller.NewObject()
 
-		obj := object.ToObject(origin.getVm())
+		obj := object.ToObject(origin.getSandbox())
 		err := adapter.adapt(obj, t, origin, caller)
 		if err != nil {
 			return err

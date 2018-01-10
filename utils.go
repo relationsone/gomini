@@ -17,6 +17,15 @@ type set_property func(object *goja.Object, propertyName string, value interface
 type set_constant func(object *goja.Object, propertyName string, value interface{})
 type get_property func(object *goja.Object, propertyName string) goja.Value
 
+type exportAdapter struct {
+	goExports map[string]interface{}
+	jsExports *goja.Object
+}
+
+func (ea *exportAdapter) Get(property string) interface{} {
+	return ea.goExports[property]
+}
+
 func stringModuleOrigin(module Module) string {
 	if module == nil {
 		return "no origin available"
@@ -70,8 +79,17 @@ func hash(value string) string {
 	return hex.EncodeToString(sum)
 }
 
+func loadPlainJavascript(kernel *kernel, file, path string, sandbox *goja.Runtime) (goja.Value, error) {
+	filename := findScriptFile(file, path)
+	if source, err := kernel.loadSource(filename); err != nil {
+		return nil, err
+	} else {
+		return prepareJavascript(filename, source, sandbox)
+	}
+}
+
 func findScriptFile(filename string, baseDir string) string {
-	if !strings.HasPrefix(filename, "zodiac/") {
+	if !strings.HasPrefix(filename, "kernel/") {
 		// Make it a full path
 		filename = filepath.Join(baseDir, filename)
 	} else {
@@ -128,19 +146,19 @@ func findScriptFile(filename string, baseDir string) string {
 	return filename
 }
 
-func sandboxSecurityCheck(property string, origin Module, caller Module) {
+func sandboxSecurityCheck(property string, origin Bundle, caller Bundle) {
 	interceptor := origin.SecurityInterceptor()
 	if !caller.Privileged() && interceptor != nil {
 		if !interceptor(caller, property) {
 			msg := fmt.Sprintf("Illegal access violation: %s cannot access %s::%s",
-				caller.Origin().Filename(), origin.Origin().Filename(), property)
+				caller.Name(), origin.Name(), property)
 			panic(errors.New(msg))
 		}
 	}
 	fmt.Println(fmt.Sprintf("SecurityInterceptor check success: %s", property))
 }
 
-func prepareJavascript(filename string, source []byte, runtime *goja.Runtime) (goja.Value, error) {
+func prepareJavascript(filename string, source string, runtime *goja.Runtime) (goja.Value, error) {
 	if prog, err := compileJavascript(filename, source); err != nil {
 		return nil, err
 
@@ -153,9 +171,9 @@ func prepareJavascript(filename string, source []byte, runtime *goja.Runtime) (g
 	}
 }
 
-func compileJavascript(filename string, source []byte) (*goja.Program, error) {
+func compileJavascript(filename string, source string) (*goja.Program, error) {
 	if !strings.HasPrefix(filename, "system::") && !filepath.IsAbs(filename) {
-		return nil, fmt.Errorf("Provided path is not absolute: %s", filename)
+		return nil, fmt.Errorf("provided path is not absolute: %s", filename)
 	}
 	ast, err := parser.ParseFile(nil, filename, source, 0)
 	if err != nil {
@@ -165,7 +183,7 @@ func compileJavascript(filename string, source []byte) (*goja.Program, error) {
 	return goja.CompileAST(ast, true)
 }
 
-func propertyDescriptor(vm *goja.Runtime, descriptor *goja.Object) (interface{}, bool, Getter, Setter) {
+func propertyDescriptor(runtime *goja.Runtime, descriptor *goja.Object) (interface{}, bool, Getter, Setter) {
 	value := descriptor.Get("value").Export()
 	writeable := descriptor.Get("writable").ToBoolean()
 	get := descriptor.Get("get")
@@ -174,43 +192,43 @@ func propertyDescriptor(vm *goja.Runtime, descriptor *goja.Object) (interface{},
 	var getter Getter
 	var setter Setter
 	if get != nil && get != goja.Null() && get != goja.Undefined() {
-		vm.ExportTo(get, &getter)
+		runtime.ExportTo(get, &getter)
 	}
 	if set != nil && set != goja.Null() && set != goja.Undefined() {
-		vm.ExportTo(set, &setter)
+		runtime.ExportTo(set, &setter)
 	}
 
 	return value, writeable, getter, setter
 }
 
-func callPropertyDefiner(callable goja.Callable, vm *goja.Runtime, object *goja.Object, property string,
-	value interface{}, getter Getter, setter Setter) {
+func callPropertyDefiner(callable goja.Callable, runtime *goja.Runtime, object *goja.Object,
+	property string, value interface{}, getter Getter, setter Setter) {
 
 	arguments := make([]goja.Value, 5)
-	arguments[0] = vm.ToValue(object)
-	arguments[1] = vm.ToValue(property)
+	arguments[0] = runtime.ToValue(object)
+	arguments[1] = runtime.ToValue(property)
 	arguments[2] = goja.Null()
 	if value != nil {
-		arguments[2] = vm.ToValue(value)
+		arguments[2] = runtime.ToValue(value)
 	}
 	arguments[3] = goja.Null()
 	if getter != nil {
-		arguments[3] = vm.ToValue(getter)
+		arguments[3] = runtime.ToValue(getter)
 	}
 	arguments[4] = goja.Null()
 	if setter != nil {
-		arguments[4] = vm.ToValue(setter)
+		arguments[4] = runtime.ToValue(setter)
 	}
-	_, err := callable(vm.ToValue(callable), arguments...)
+	_, err := callable(runtime.ToValue(callable), arguments...)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func DeepFreezeObject(value goja.Value, vm *goja.Runtime) goja.Value {
+func DeepFreezeObject(value goja.Value, runtime *goja.Runtime) goja.Value {
 	var deepFreeze goja.Callable
-	function := vm.Get("deepFreeze")
-	vm.ExportTo(function, &deepFreeze)
+	function := runtime.Get("deepFreeze")
+	runtime.ExportTo(function, &deepFreeze)
 
 	if val, err := deepFreeze(function, value); err != nil {
 		panic(err)
@@ -219,12 +237,12 @@ func DeepFreezeObject(value goja.Value, vm *goja.Runtime) goja.Value {
 	}
 }
 
-func _freezeObject(value goja.Value, vm *goja.Runtime) goja.Value {
-	object := vm.Get("Object").ToObject(vm)
+func _freezeObject(value goja.Value, runtime *goja.Runtime) goja.Value {
+	object := runtime.Get("Object").ToObject(runtime)
 
 	var freeze goja.Callable
 	object.Get("freeze")
-	vm.ExportTo(object, &freeze)
+	runtime.ExportTo(object, &freeze)
 
 	if val, err := freeze(object, value); err != nil {
 		panic(err)
@@ -233,7 +251,7 @@ func _freezeObject(value goja.Value, vm *goja.Runtime) goja.Value {
 	}
 }
 
-func prepareDefineProperty(vm *goja.Runtime) goja.Callable {
+func prepareDefineProperty(runtime *goja.Runtime) goja.Callable {
 	source := `
 	(function() {
 		return function(parent, set_property, value, getter, setter) {
@@ -263,21 +281,21 @@ func prepareDefineProperty(vm *goja.Runtime) goja.Callable {
 		};
 	})()`
 
-	prog, err := compileJavascript("system::DefineProperty", []byte(source))
+	prog, err := compileJavascript("system::DefineProperty", source)
 	if err != nil {
 		panic(err)
 	}
 
-	if value, err := vm.RunProgram(prog); err != nil {
+	if value, err := runtime.RunProgram(prog); err != nil {
 		panic(err)
 	} else {
 		var property goja.Callable
-		vm.ExportTo(value, &property)
+		runtime.ExportTo(value, &property)
 		return property
 	}
 }
 
-func prepareDefineConstant(vm *goja.Runtime) set_constant {
+func prepareDefineConstant(runtime *goja.Runtime) set_constant {
 	source := `
 	(function() {
 		return function(parent, set_property, value) {
@@ -291,21 +309,21 @@ func prepareDefineConstant(vm *goja.Runtime) set_constant {
 	})()
 	`
 
-	prog, err := compileJavascript("system::DefineConstant", []byte(source))
+	prog, err := compileJavascript("system::DefineConstant", source)
 	if err != nil {
 		panic(err)
 	}
 
-	if value, err := vm.RunProgram(prog); err != nil {
+	if value, err := runtime.RunProgram(prog); err != nil {
 		panic(err)
 	} else {
 		var constant set_constant
-		vm.ExportTo(value, &constant)
+		runtime.ExportTo(value, &constant)
 		return constant
 	}
 }
 
-func preparePropertyDescriptor(vm *goja.Runtime) get_property {
+func preparePropertyDescriptor(runtime *goja.Runtime) get_property {
 	source := `
 	(function() {
 		return function(object, set_property) {
@@ -314,16 +332,59 @@ func preparePropertyDescriptor(vm *goja.Runtime) get_property {
 	})()
 	`
 
-	prog, err := compileJavascript("system::PropertyDescriptor", []byte(source))
+	prog, err := compileJavascript("system::PropertyDescriptor", source)
 	if err != nil {
 		panic(err)
 	}
 
-	if value, err := vm.RunProgram(prog); err != nil {
+	if value, err := runtime.RunProgram(prog); err != nil {
 		panic(err)
 	} else {
 		var property get_property
-		vm.ExportTo(value, &property)
+		runtime.ExportTo(value, &property)
 		return property
 	}
+}
+
+func executeWithSystem(module *module, wrapped *goja.Program) error {
+	source := `
+	(function() {
+		return function(System, callback) {
+			callback(System);
+		}
+	})()
+	`
+
+	prog, err := compileJavascript("system::entrypoint", source)
+	if err != nil {
+		return err
+	}
+
+	runtime := module.bundle.getSandbox()
+	value, err := runtime.RunProgram(prog)
+	if err != nil {
+		return err
+	}
+
+	callback := func(call goja.FunctionCall) goja.Value {
+		val, err := runtime.RunProgram(wrapped)
+		if err != nil {
+			panic(err)
+		}
+		return val
+	}
+
+	var call goja.Callable
+	runtime.ExportTo(value, &call)
+
+	if val, err := call(goja.Undefined(), module.system, runtime.ToValue(callback)); err != nil {
+		return err
+	} else {
+		if val != goja.Undefined() && val != goja.Null() {
+			return errors.New(
+				fmt.Sprintf("Modules initializers aren't supposed to return anything: %s", val.Export()))
+		}
+	}
+
+	return nil
 }

@@ -5,9 +5,9 @@ import "github.com/dop251/goja"
 type Getter func() (value interface{})
 type Setter func(value interface{})
 
-type SecurityInterceptor func(caller Module, property string) (accessGranted bool)
+type SecurityInterceptor func(caller Bundle, property string) (accessGranted bool)
 
-type ExtensionBinder func(module Module, moduleBuilder ModuleBuilder)
+type ExtensionBinder func(bundle Bundle, moduleBuilder ModuleBuilder)
 type ObjectBinder func(objectBuilder ObjectBuilder)
 
 type KernelModuleDefinition interface {
@@ -27,13 +27,25 @@ type Bundle interface {
 	ID() string
 	Name() string
 	Path() string
-	Exports() map[string]interface{}
+	BundleExports() ExportAdapter
 	Privileged() bool
 	SecurityInterceptor() SecurityInterceptor
-	getExports() *goja.Object
-	setName(name string)
-	getVm() *goja.Runtime
+	Export(value goja.Value, target interface{}) error
+
+	NewObject() *goja.Object
+	ToValue(value interface{}) goja.Value
+	Define(property string, value interface{})
+	DefineProperty(object *goja.Object, property string, value interface{}, getter Getter, setter Setter)
+	DefineConstant(object *goja.Object, constant string, value interface{})
+	PropertyDescriptor(object *goja.Object, property string) (value interface{}, writable bool, getter Getter, setter Setter)
+	FreezeObject(object *goja.Object)
+
+	getSandbox() *goja.Runtime
+	getBundleExports() *goja.Object
 	getAdapter() *adapter
+	registerModule(name string, dependencies []string, callback registerCallback, module Module) error
+	findModuleById(id string) *module
+	findModuleByModuleFile(file string) *module
 }
 
 type Module interface {
@@ -41,21 +53,10 @@ type Module interface {
 	Name() string
 	Origin() Origin
 	Bundle() Bundle
-	Exports() map[string]interface{}
-	Privileged() bool
-	SecurityInterceptor() SecurityInterceptor
-	NewObject() *goja.Object
-	Define(property string, value interface{})
-	DefineProperty(object *goja.Object, property string, value interface{}, getter Getter, setter Setter)
-	DefineConstant(object *goja.Object, constant string, value interface{})
-	PropertyDescriptor(object *goja.Object, property string) (value interface{}, writable bool, getter Getter, setter Setter)
+	ModuleExports() ExportAdapter
 	Export(value goja.Value, target interface{}) error
-	ToValue(value interface{}) goja.Value
-	FreezeObject(object *goja.Object)
-	getExports() *goja.Object
-	setName(name string)
-	getVm() *goja.Runtime
-	getAdapter() *adapter
+
+	getModuleExports() *goja.Object
 }
 
 type ModuleBuilder interface {
@@ -88,4 +89,8 @@ type ScriptExtension interface {
 	ScriptFile() string
 	ExtensionBinder() ExtensionBinder
 	SecurityInterceptor() SecurityInterceptor
+}
+
+type ExportAdapter interface {
+	Get(property string) interface{}
 }

@@ -7,20 +7,20 @@ import (
 	"reflect"
 )
 
-type moduleBuilderImpl struct {
+type moduleBuilder struct {
 	module Module
 	kernel *kernel
 	*scriptModuleDefinition
 }
 
-type objectBuilderImpl struct {
+type objectBuilder struct {
 	module Module
 	kernel *kernel
 	*scriptObjectDefinition
 }
 
 func newModuleBuilder(module Module, kernel *kernel) ModuleBuilder {
-	return &moduleBuilderImpl{
+	return &moduleBuilder{
 		module,
 		kernel,
 		&scriptModuleDefinition{
@@ -33,7 +33,7 @@ func newModuleBuilder(module Module, kernel *kernel) ModuleBuilder {
 	}
 }
 
-func (mbi *moduleBuilderImpl) DefineObject(objectName string, objectBinder ObjectBinder) ModuleBuilder {
+func (mb *moduleBuilder) DefineObject(objectName string, objectBinder ObjectBinder) ModuleBuilder {
 	definition := &scriptObjectDefinition{
 		objectName,
 		make([]*scriptObjectDefinition, 0),
@@ -42,53 +42,53 @@ func (mbi *moduleBuilderImpl) DefineObject(objectName string, objectBinder Objec
 		make([]*scriptConstantDefinition, 0),
 	}
 
-	objectBuilder := &objectBuilderImpl{
-		mbi.module,
-		mbi.kernel,
+	objectBuilder := &objectBuilder{
+		mb.module,
+		mb.kernel,
 		definition,
 	}
 	objectBinder(objectBuilder)
 
-	mbi.objects = append(mbi.objects, definition)
-	return mbi
+	mb.objects = append(mb.objects, definition)
+	return mb
 }
 
-func (mbi *moduleBuilderImpl) DefineFunction(functionName string, function interface{}) ModuleBuilder {
-	mbi.functions = append(mbi.functions, &scriptFunctionDefinition{
+func (mb *moduleBuilder) DefineFunction(functionName string, function interface{}) ModuleBuilder {
+	mb.functions = append(mb.functions, &scriptFunctionDefinition{
 		functionName,
 		function,
 	})
-	return mbi
+	return mb
 }
 
-func (mbi *moduleBuilderImpl) DefineProperty(
+func (mb *moduleBuilder) DefineProperty(
 	propertyName string,
 	value interface{},
 	getter func() interface{},
 	setter func(value interface{})) ModuleBuilder {
 
-	mbi.properties = append(mbi.properties, &scriptPropertyDefinition{
+	mb.properties = append(mb.properties, &scriptPropertyDefinition{
 		propertyName,
 		value,
 		getter,
 		setter,
 	})
-	return mbi
+	return mb
 }
 
-func (mbi *moduleBuilderImpl) DefineConstant(constantName string, value interface{}) ModuleBuilder {
-	mbi.constants = append(mbi.constants, &scriptConstantDefinition{
+func (mb *moduleBuilder) DefineConstant(constantName string, value interface{}) ModuleBuilder {
+	mb.constants = append(mb.constants, &scriptConstantDefinition{
 		constantName,
 		value,
 	})
-	return mbi
+	return mb
 }
 
-func (mbi *moduleBuilderImpl) EndModule() {
-	mbi.defineModule()
+func (mb *moduleBuilder) EndModule() {
+	mb.defineModule()
 }
 
-func (obi *objectBuilderImpl) DefineObject(objectName string, objectBinder ObjectBinder) ObjectBuilder {
+func (obi *objectBuilder) DefineObject(objectName string, objectBinder ObjectBinder) ObjectBuilder {
 	definition := &scriptObjectDefinition{
 		objectName,
 		make([]*scriptObjectDefinition, 0),
@@ -97,7 +97,7 @@ func (obi *objectBuilderImpl) DefineObject(objectName string, objectBinder Objec
 		make([]*scriptConstantDefinition, 0),
 	}
 
-	objectBuilder := &objectBuilderImpl{
+	objectBuilder := &objectBuilder{
 		obi.module,
 		obi.kernel,
 		definition,
@@ -108,7 +108,7 @@ func (obi *objectBuilderImpl) DefineObject(objectName string, objectBinder Objec
 	return obi
 }
 
-func (obi *objectBuilderImpl) DefineFunction(functionName string, function interface{}) ObjectBuilder {
+func (obi *objectBuilder) DefineFunction(functionName string, function interface{}) ObjectBuilder {
 	obi.functions = append(obi.functions, &scriptFunctionDefinition{
 		functionName,
 		function,
@@ -116,7 +116,7 @@ func (obi *objectBuilderImpl) DefineFunction(functionName string, function inter
 	return obi
 }
 
-func (obi *objectBuilderImpl) DefineProperty(
+func (obi *objectBuilder) DefineProperty(
 	propertyName string,
 	value interface{},
 	getter func() interface{},
@@ -131,7 +131,7 @@ func (obi *objectBuilderImpl) DefineProperty(
 	return obi
 }
 
-func (obi *objectBuilderImpl) DefineConstant(constantName string, value interface{}) ObjectBuilder {
+func (obi *objectBuilder) DefineConstant(constantName string, value interface{}) ObjectBuilder {
 	obi.constants = append(obi.constants, &scriptConstantDefinition{
 		constantName,
 		value,
@@ -139,38 +139,37 @@ func (obi *objectBuilderImpl) DefineConstant(constantName string, value interfac
 	return obi
 }
 
-func (*objectBuilderImpl) EndObject() {
+func (*objectBuilder) EndObject() {
 }
 
-func (mbi *moduleBuilderImpl) defineModule() {
-	filename := filepath.Join(mbi.module.Origin().Path(), mbi.module.Origin().Filename())
-	moduleName := filepath.Base(filename)
+func (mb *moduleBuilder) defineModule() {
+	filename := filepath.Join(mb.module.Origin().Path(), mb.module.Origin().Filename())
 
-	mbi.kernel.mm.defineKernelModule(mbi.module, moduleName, filename, func(exports *goja.Object) {
-		mbi.defineFunctions(exports, mbi.functions)
-		mbi.defineProperties(exports, mbi.properties)
-		mbi.defineConstants(exports, mbi.constants)
-		mbi.defineObjects(exports, mbi.objects)
+	mb.kernel.defineKernelModule(mb.module, filename, func(exports *goja.Object) {
+		mb.defineFunctions(exports, mb.functions)
+		mb.defineProperties(exports, mb.properties)
+		mb.defineConstants(exports, mb.constants)
+		mb.defineObjects(exports, mb.objects)
 	})
 
-	if mbi.kernel.kernelDebugging {
-		fmt.Println(fmt.Sprintf("Registered builtin module: %s with %s", moduleName, filename))
+	if mb.kernel.kernelDebugging {
+		fmt.Println(fmt.Sprintf("Registered builtin module: %s with %s", mb.moduleName, filename))
 	}
 }
 
-func (mbi *moduleBuilderImpl) defineFunctions(parent *goja.Object, definitions []*scriptFunctionDefinition) {
+func (mb *moduleBuilder) defineFunctions(parent *goja.Object, definitions []*scriptFunctionDefinition) {
 	for _, function := range definitions {
 		parent.Set(function.functionName, function.function)
 	}
 }
 
-func (mbi *moduleBuilderImpl) defineProperties(parent *goja.Object, definitions []*scriptPropertyDefinition) {
+func (mb *moduleBuilder) defineProperties(parent *goja.Object, definitions []*scriptPropertyDefinition) {
 	for _, property := range definitions {
-		mbi.module.DefineProperty(parent, property.propertyName, property.value, property.getter, property.setter)
+		mb.module.Bundle().DefineProperty(parent, property.propertyName, property.value, property.getter, property.setter)
 	}
 }
 
-func (mbi *moduleBuilderImpl) defineConstants(parent *goja.Object, definitions []*scriptConstantDefinition) {
+func (mb *moduleBuilder) defineConstants(parent *goja.Object, definitions []*scriptConstantDefinition) {
 	for _, constant := range definitions {
 		value := constant.value
 		x := reflect.ValueOf(value)
@@ -186,23 +185,23 @@ func (mbi *moduleBuilderImpl) defineConstants(parent *goja.Object, definitions [
 		case reflect.Bool:
 			value = x.Bool()
 		}
-		mbi.module.DefineConstant(parent, constant.constantName, value)
+		mb.module.Bundle().DefineConstant(parent, constant.constantName, value)
 	}
 }
 
-func (mbi *moduleBuilderImpl) defineObjects(parent *goja.Object, definitions []*scriptObjectDefinition) {
+func (mb *moduleBuilder) defineObjects(parent *goja.Object, definitions []*scriptObjectDefinition) {
 	for _, object := range definitions {
-		mbi.defineObject(parent, object)
+		mb.defineObject(parent, object)
 	}
 }
 
-func (mbi *moduleBuilderImpl) defineObject(parent *goja.Object, definition *scriptObjectDefinition) {
-	object := mbi.module.NewObject()
+func (mb *moduleBuilder) defineObject(parent *goja.Object, definition *scriptObjectDefinition) {
+	object := mb.module.Bundle().NewObject()
 
-	mbi.defineFunctions(object, definition.functions)
-	mbi.defineProperties(object, definition.properties)
-	mbi.defineConstants(object, definition.constants)
-	mbi.defineObjects(object, definition.objects)
+	mb.defineFunctions(object, definition.functions)
+	mb.defineProperties(object, definition.properties)
+	mb.defineConstants(object, definition.constants)
+	mb.defineObjects(object, definition.objects)
 
 	parent.Set(definition.objectName, object)
 }

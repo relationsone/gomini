@@ -110,10 +110,10 @@ func (t *transpiler) transpileFile(path string) (*string, error) {
 }
 
 func (t *transpiler) _transpileSource(source string) (*string, error) {
-	// Make sure the underlying vm is initialized
+	// Make sure the underlying runtime is initialized
 	t.initialize()
 
-	// Retrieve the transpiler function from the vm
+	// Retrieve the transpiler function from the runtime
 	jsTranspiler := t.vm.Get("transpiler")
 	if jsTranspiler == nil || jsTranspiler == goja.Null() {
 		panic(errors.New("transpiler function not available"))
@@ -185,7 +185,7 @@ func (t *transpiler) loadScript(filename string) (goja.Value, error) {
 		return nil, err
 
 	} else {
-		return prepareJavascript(scriptFile, source, t.vm)
+		return prepareJavascript(scriptFile, string(source), t.vm)
 	}
 }
 
