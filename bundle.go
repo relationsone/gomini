@@ -13,7 +13,7 @@ type bundle struct {
 	name               string
 	basePath           string
 	sandbox            *goja.Runtime
-	adapter            *adapter
+	adapter            *securityProxy
 	exports            *goja.Object
 	privileged         bool
 	modules            []*module
@@ -44,7 +44,7 @@ func newBundle(kernel *kernel, id, name, basePath string) (*bundle, error) {
 		return nil, err
 	}
 
-	adapter, err := newAdapter(kernel, bundle, basePath)
+	adapter, err := newSecurityProxy(kernel, bundle, basePath)
 	if err != nil {
 		return nil, errors.New(err)
 	}
@@ -125,7 +125,7 @@ func (b *bundle) getSandbox() *goja.Runtime {
 	return b.sandbox
 }
 
-func (b *bundle) getAdapter() *adapter {
+func (b *bundle) getAdapter() *securityProxy {
 	return b.adapter
 }
 

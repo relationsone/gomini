@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"github.com/dop251/goja/parser"
-	"github.com/go-errors/errors"
 )
 
 type set_property func(object *goja.Object, propertyName string, value interface{}, getter Getter, setter Setter)
@@ -135,18 +134,6 @@ func findScriptFile(filename string, baseDir string) string {
 		return candidate
 	}
 	return filename
-}
-
-func sandboxSecurityCheck(property string, origin Bundle, caller Bundle) {
-	interceptor := origin.SecurityInterceptor()
-	if !caller.Privileged() && interceptor != nil {
-		if !interceptor(caller, property) {
-			msg := fmt.Sprintf("Illegal access violation: %s cannot access %s::%s",
-				caller.Name(), origin.Name(), property)
-			panic(errors.New(msg))
-		}
-	}
-	fmt.Println(fmt.Sprintf("SecurityInterceptor check success: %s", property))
 }
 
 func prepareJavascript(filename string, source string, runtime *goja.Runtime) (goja.Value, error) {

@@ -41,7 +41,7 @@ type Bundle interface {
 
 	getSandbox() *goja.Runtime
 	getBundleExports() *goja.Object
-	getAdapter() *adapter
+	getAdapter() *securityProxy
 	findModuleById(id string) *module
 	findModuleByModuleFile(file string) *module
 	addModule(module *module)

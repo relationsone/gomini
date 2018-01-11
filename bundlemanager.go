@@ -17,7 +17,8 @@ const (
 )
 
 const (
-	privilegeKernel = "PRIVILEGE_KERNEL"
+	privilegeKernel   = "PRIVILEGE_KERNEL"
+	privilegeDatabase = "PRIVILEGE_DATABASE"
 )
 
 func newBundleManager(kernel *kernel, baseDir string) *bundleManager {

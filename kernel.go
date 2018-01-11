@@ -145,7 +145,7 @@ func (k *kernel) loadSource(filename string) (string, error) {
 		cacheFilename := filepath.Join(k.transpilerCacheDir, hash(filename))
 		if !fileExists(cacheFilename) {
 			if k.kernelDebugging {
-				fmt.Println(fmt.Sprintf("Loading scriptfile '%s' with live transpiler", filename))
+				fmt.Println(fmt.Sprintf("Kernel: Loading scriptfile '%s' with live transpiler", filename))
 			}
 
 			source, err := k.transpile(filename)
@@ -162,7 +162,7 @@ func (k *kernel) loadSource(filename string) (string, error) {
 
 		// Override filename with the pre-transpiled, cached file
 		if k.kernelDebugging {
-			fmt.Println(fmt.Sprintf("Loading scriptfile '%s' from pretranspiled cache: %s", filename, cacheFilename))
+			fmt.Println(fmt.Sprintf("Kernel: Loading scriptfile '%s' from pretranspiled cache: %s", filename, cacheFilename))
 		}
 
 		filename = cacheFilename
@@ -172,23 +172,6 @@ func (k *kernel) loadSource(filename string) (string, error) {
 	} else {
 		return string(data), nil
 	}
-}
-
-func (k *kernel) isolateSystemObject(bundle Bundle, source string, isolate bool) ([]byte, error) {
-	if !isolate {
-		return []byte(source), nil
-	}
-
-	return []byte(fmt.Sprintf("(function(System) {\n%s\n})()", source)), nil
-}
-
-func (k *kernel) generateRandomIdentifier(prefix string) (string, error) {
-	id, err := uuid.NewV4()
-	if err != nil {
-		return "", errors.New(err)
-	}
-
-	return fmt.Sprintf("%s___%s", prefix, strings.Replace(id.String(), "-", "", -1)), nil
 }
 
 func (k *kernel) transpile(filename string) (*string, error) {
@@ -272,7 +255,7 @@ func (k *kernel) kernelRegisterModule(module *module,
 	dependencies []string, callback registerCallback, bundle *bundle) error {
 
 	if k.kernelDebugging {
-		fmt.Println(fmt.Sprintf("Loading %s into %s", module.name, bundle.Name()))
+		fmt.Println(fmt.Sprintf("Kernel: Loading module %s into bundle %s", module.name, bundle.Name()))
 	}
 
 	exportFunction := func(name string, value goja.Value) {
@@ -298,7 +281,7 @@ func (k *kernel) kernelRegisterModule(module *module,
 
 		} else {
 			if k.kernelDebugging {
-				fmt.Println(fmt.Sprintf("Reused already loaded module %s with id %s", filename, dependentModule.ID()))
+				fmt.Println(fmt.Sprintf("Kernel: Reused already loaded module %s with id %s", filename, dependentModule.ID()))
 			}
 			dependentModules[i] = dependentModule
 		}
@@ -330,7 +313,7 @@ func (k *kernel) kernelRegisterModule(module *module,
 
 	// Register the actual classes
 	if k.kernelDebugging {
-		fmt.Println(fmt.Sprintf("Executing initializer of module: %s", module.Name()))
+		fmt.Println(fmt.Sprintf("Kernel: Executing initializer of module: %s", module.Name()))
 	}
 	if _, err := executable(execute); err != nil {
 		panic(err)

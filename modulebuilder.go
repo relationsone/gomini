@@ -153,7 +153,7 @@ func (mb *moduleBuilder) defineModule() {
 	})
 
 	if mb.kernel.kernelDebugging {
-		fmt.Println(fmt.Sprintf("Registered builtin module: %s with %s", mb.moduleName, filename))
+		fmt.Println(fmt.Sprintf("ModuleBuilder: Registered builtin module: %s with %s", mb.moduleName, filename))
 	}
 }
 

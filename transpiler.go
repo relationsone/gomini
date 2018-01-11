@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"runtime"
 	"github.com/go-errors/errors"
-	"taurus/integration/debug"
+	"fmt"
 )
 
 const cacheJsonFile = "cache.json"
@@ -45,7 +45,7 @@ func newTranspiler(kernel *kernel) (*transpiler, error) {
 
 func (t *transpiler) initialize() {
 	if t.vm == nil {
-		debug.DebugLog("Setting up typescript transpiler...")
+		fmt.Println("Transpiler: Setting up typescript transpiler...")
 
 		t.vm = goja.New()
 		if _, err := t.loadScript("js/typescript"); err != nil {
@@ -80,7 +80,7 @@ func (t *transpiler) transpileFile(path string) (*string, error) {
 	module := t.findTranspiledModule(path)
 
 	if fileExists(cacheFile) && module != nil && module.Checksum == checksum {
-		debug.DebugLog("Already transpiled %s as %s...", path, cacheFile)
+		fmt.Println(fmt.Sprintf("Transpiler: Already transpiled %s as %s...", path, cacheFile))
 		return nil, nil
 	}
 
@@ -91,7 +91,7 @@ func (t *transpiler) transpileFile(path string) (*string, error) {
 	// Remove old module definition
 	t.removeTranspiledModule(module)
 
-	debug.DebugLog("Transpiling %s to %s...", path, cacheFile)
+	fmt.Println(fmt.Sprintf("Transpiler: Transpiling %s to %s...", path, cacheFile))
 
 	if source, err := t._transpileSource(code); err != nil {
 		return nil, err

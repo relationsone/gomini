@@ -23,13 +23,13 @@ type _adaptproperty func(property string, descriptor _propertydescriptor)
 type adapter_function func(value interface{}, adaptnull _adaptnull, adaptfunction _adaptfunction,
 	adaptarray _adaptarray, adaptobject _adaptobject, adaptproperty _adaptproperty) error
 
-type adapter struct {
+type securityProxy struct {
 	vm           *goja.Runtime
 	adaptingCall adapter_function
 }
 
-func newAdapter(kernel *kernel, bundle Bundle, basePath string) (*adapter, error) {
-	filename := findScriptFile("js/kernel/adapter.js", basePath)
+func newSecurityProxy(kernel *kernel, bundle Bundle, basePath string) (*securityProxy, error) {
+	filename := findScriptFile("js/kernel/securityProxy.js", basePath)
 	source, err := kernel.loadSource(filename)
 	if err != nil {
 		return nil, errors.New(err)
@@ -47,54 +47,50 @@ func newAdapter(kernel *kernel, bundle Bundle, basePath string) (*adapter, error
 		return nil, err
 	}
 
-	return &adapter{
+	return &securityProxy{
 		vm:           bundle.getSandbox(),
 		adaptingCall: adaptingCall,
 	}, nil
 }
 
-func (adapter *adapter) adapt(source, target *goja.Object, origin Bundle, caller Bundle) error {
+func (s *securityProxy) adapt(source, target *goja.Object, origin Bundle, caller Bundle) error {
 	var adaptnull _adaptnull = func(property string) error {
 		return target.Set(property, goja.Null())
 	}
 
 	var adaptfunction _adaptfunction = func(property string, prop goja.Value, function goja.Callable, constructor goja.Callable) error {
 		call := func(call goja.FunctionCall) goja.Value {
-			if property == "registerRequestHandler" {
-				fmt.Println("BÄM")
-			}
-
-			sandboxSecurityCheck(property, origin, caller)
+			s.sandboxSecurityCheck(property, origin, caller)
 
 			parameters := make([]goja.Value, len(call.Arguments))
 			for i, arg := range call.Arguments {
 				parameters[i] = origin.ToValue(arg.Export())
 			}
 
-			s, err := function(source, parameters...)
+			proxy, err := function(source, parameters...)
 			if err != nil {
 				panic(err)
 			}
 
-			return caller.ToValue(s.Export())
+			return caller.ToValue(proxy.Export())
 		}
 
 		construct := func(args []goja.Value) *goja.Object {
-			sandboxSecurityCheck(property, origin, caller)
+			s.sandboxSecurityCheck(property, origin, caller)
 
 			arguments := make([]goja.Value, len(args))
 			for i, arg := range args {
 				arguments[i] = origin.ToValue(arg.Export())
 			}
 
-			s, err := constructor(origin.ToValue(constructor), arguments...)
+			proxy, err := constructor(origin.ToValue(constructor), arguments...)
 			if err != nil {
 				panic(err)
 			}
 
-			instance := s.ToObject(origin.getSandbox())
+			instance := proxy.ToObject(origin.getSandbox())
 			newObject := caller.NewObject()
-			if err := adapter.adapt(instance, newObject, origin, caller); err != nil {
+			if err := s.adapt(instance, newObject, origin, caller); err != nil {
 				panic(err)
 			}
 
@@ -119,7 +115,7 @@ func (adapter *adapter) adapt(source, target *goja.Object, origin Bundle, caller
 		t := caller.NewObject()
 
 		obj := object.ToObject(origin.getSandbox())
-		err := adapter.adapt(obj, t, origin, caller)
+		err := s.adapt(obj, t, origin, caller)
 		if err != nil {
 			return err
 		}
@@ -133,7 +129,7 @@ func (adapter *adapter) adapt(source, target *goja.Object, origin Bundle, caller
 		setter := descriptor.set
 
 		var get = func() interface{} {
-			sandboxSecurityCheck(property, origin, caller)
+			s.sandboxSecurityCheck(property, origin, caller)
 			if getter != nil {
 				return caller.ToValue(getter())
 			}
@@ -144,7 +140,7 @@ func (adapter *adapter) adapt(source, target *goja.Object, origin Bundle, caller
 		if descriptor.writable {
 			set = func(value interface{}) {
 				if setter != nil {
-					sandboxSecurityCheck(property, origin, caller)
+					s.sandboxSecurityCheck(property, origin, caller)
 					setter(value)
 				}
 			}
@@ -153,5 +149,17 @@ func (adapter *adapter) adapt(source, target *goja.Object, origin Bundle, caller
 		caller.DefineProperty(target, property, nil, get, set)
 	}
 
-	return adapter.adaptingCall(source, adaptnull, adaptfunction, adaptarray, adaptobject, adaptproperty)
+	return s.adaptingCall(source, adaptnull, adaptfunction, adaptarray, adaptobject, adaptproperty)
+}
+
+func (s *securityProxy) sandboxSecurityCheck(property string, origin Bundle, caller Bundle) {
+	interceptor := origin.SecurityInterceptor()
+	if !caller.Privileged() && interceptor != nil {
+		if !interceptor(caller, property) {
+			msg := fmt.Sprintf("Illegal access violation: %s cannot access %s::%s",
+				caller.Name(), origin.Name(), property)
+			panic(errors.New(msg))
+		}
+	}
+	fmt.Println(fmt.Sprintf("SecurityProxy: SecurityInterceptor check success: %s", property))
 }
