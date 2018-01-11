@@ -41,7 +41,6 @@ func newSecurityProxy(kernel *kernel, bundle Bundle, basePath string) (*security
 	}
 
 	var adaptingCall adapter_function
-	//var adaptingCall goja.Callable
 	err = bundle.getSandbox().ExportTo(value, &adaptingCall)
 	if err != nil {
 		return nil, err
