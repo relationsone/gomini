@@ -27,7 +27,6 @@ type Bundle interface {
 	ID() string
 	Name() string
 	Path() string
-	BundleExports() ExportAdapter
 	Privileged() bool
 	SecurityInterceptor() SecurityInterceptor
 	Export(value goja.Value, target interface{}) error
@@ -43,9 +42,13 @@ type Bundle interface {
 	getSandbox() *goja.Runtime
 	getBundleExports() *goja.Object
 	getAdapter() *adapter
-	registerModule(name string, dependencies []string, callback registerCallback, module Module) error
 	findModuleById(id string) *module
 	findModuleByModuleFile(file string) *module
+	addModule(module *module)
+	removeModule(module *module)
+	peekLoaderStack() string
+	popLoaderStack() string
+	pushLoaderStack(element string)
 }
 
 type Module interface {
@@ -53,10 +56,10 @@ type Module interface {
 	Name() string
 	Origin() Origin
 	Bundle() Bundle
-	ModuleExports() ExportAdapter
-	Export(value goja.Value, target interface{}) error
 
+	export(value goja.Value, target interface{}) error
 	getModuleExports() *goja.Object
+	setName(name string)
 }
 
 type ModuleBuilder interface {

@@ -4,24 +4,47 @@ import (
 	"github.com/dop251/goja"
 	"github.com/go-errors/errors"
 	"path/filepath"
+	"reflect"
 )
+
+type bundle struct {
+	kernel             *kernel
+	id                 string
+	name               string
+	basePath           string
+	sandbox            *goja.Runtime
+	adapter            *adapter
+	exports            *goja.Object
+	privileged         bool
+	modules            []*module
+	propertyDefiner    goja.Callable
+	constantDefiner    set_constant
+	propertyDescriptor get_property
+	loaderStack        []string
+}
 
 func newBundle(kernel *kernel, id, name, basePath string) (*bundle, error) {
 	sandbox := goja.New()
 
 	bundle := &bundle{
-		kernel:   kernel,
-		id:       id,
-		name:     name,
-		basePath: basePath,
-		sandbox:  sandbox,
-		exports: &exportAdapter{
-			goExports: make(map[string]interface{}),
-			jsExports: sandbox.NewObject(),
-		},
+		kernel:      kernel,
+		id:          id,
+		name:        name,
+		basePath:    basePath,
+		sandbox:     sandbox,
+		exports:     sandbox.NewObject(),
+		loaderStack: make([]string, 0),
 	}
 
-	adapter, err := newAdapter(kernel, bundle)
+	system := sandbox.NewObject()
+	sandbox.Set("System", system)
+	register := sandbox.ToValue(bundle.systemRegister)
+	err := system.DefineDataProperty("register", register, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
+	if err != nil {
+		return nil, err
+	}
+
+	adapter, err := newAdapter(kernel, bundle, basePath)
 	if err != nil {
 		return nil, errors.New(err)
 	}
@@ -37,21 +60,6 @@ func newBundle(kernel *kernel, id, name, basePath string) (*bundle, error) {
 	bundle.adapter = adapter
 
 	return bundle, nil
-}
-
-type bundle struct {
-	kernel             *kernel
-	id                 string
-	name               string
-	basePath           string
-	sandbox            *goja.Runtime
-	adapter            *adapter
-	exports            *exportAdapter
-	privileged         bool
-	modules            []*module
-	propertyDefiner    goja.Callable
-	constantDefiner    set_constant
-	propertyDescriptor get_property
 }
 
 func (b *bundle) findModuleByModuleFile(file string) *module {
@@ -98,12 +106,8 @@ func (b *bundle) Path() string {
 	return b.basePath
 }
 
-func (b *bundle) BundleExports() ExportAdapter {
-	return b.exports
-}
-
 func (b *bundle) getBundleExports() *goja.Object {
-	return b.exports.jsExports
+	return b.exports
 }
 
 func (b *bundle) Privileged() bool {
@@ -146,6 +150,81 @@ func (b *bundle) PropertyDescriptor(object *goja.Object, property string) (value
 	return propertyDescriptor(b.sandbox, descriptor.ToObject(b.sandbox))
 }
 
-func (b *bundle) registerModule(name string, dependencies []string, callback registerCallback, module Module) error {
-	return b.kernel.kernelRegisterModule(name, dependencies, callback, module, b)
+func (b *bundle) addModule(module *module) {
+	b.modules = append(b.modules, module)
+}
+
+func (b *bundle) removeModule(module *module) {
+	for i, el := range b.modules {
+		if el == module {
+			b.modules = append(b.modules[:i], b.modules[i+1:]...)
+			break
+		}
+	}
+}
+
+func (b *bundle) pushLoaderStack(element string) {
+	b.loaderStack = append(b.loaderStack, element)
+}
+
+func (b *bundle) popLoaderStack() string {
+	if len(b.loaderStack) == 0 {
+		return ""
+	}
+	element := b.loaderStack[len(b.loaderStack)-1]
+	b.loaderStack = b.loaderStack[:len(b.loaderStack)-1]
+	return element
+}
+
+func (b *bundle) peekLoaderStack() string {
+	if len(b.loaderStack) == 0 {
+		return ""
+	}
+	return b.loaderStack[len(b.loaderStack)-1]
+}
+
+func (b *bundle) systemRegister(call goja.FunctionCall) goja.Value {
+	var module *module = nil
+	if len(b.loaderStack) > 0 {
+		moduleId := b.peekLoaderStack()
+		module = b.findModuleById(moduleId)
+	}
+
+	if module == nil {
+		panic(errors.New("failed to load module: internal error"))
+	}
+
+	argIndex := 0
+	argument := call.Argument(argIndex)
+	switch argument.ExportType().Kind() {
+	case reflect.String:
+		moduleName := argument.String()
+		module.setName(moduleName)
+		argIndex++
+	}
+
+	argument = call.Argument(argIndex)
+	if !isArray(argument) {
+		panic("Neither string (name) or array (dependencies) was passed as the first parameter")
+	}
+	argIndex++
+
+	deps := argument.Export().([]interface{})
+	dependencies := make([]string, len(deps))
+	for i := 0; i < len(deps); i++ {
+		dependencies[i] = deps[i].(string)
+	}
+
+	var callback registerCallback
+	err := b.sandbox.ExportTo(call.Argument(argIndex), &callback)
+	if err != nil {
+		panic(err)
+	}
+
+	err = b.kernel.kernelRegisterModule(module, dependencies, callback, b)
+	if err != nil {
+		panic(err)
+	}
+
+	return goja.Undefined()
 }

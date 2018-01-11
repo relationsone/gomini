@@ -18,18 +18,29 @@ const kernel_id = "76141a6c-0aec-4973-b04b-8fdd54753e03"
 type registerExport func(name string, value goja.Value)
 type registerCallback func(export registerExport, context *goja.Object) *goja.Object
 
-func NewScriptKernel(baseDir, transpilerCacheDir string, kernelDebugging bool) (*kernel, error) {
-	if !filepath.IsAbs(baseDir) {
-		absBaseDir, err := filepath.Abs(baseDir)
+/**
+ * The kernel is a special bundle type, which is the root bundle to be initialized and has
+ * all privileges (PRIVILEGE_KERNEL) and can leave bundle boundaries.
+ */
+type kernel struct {
+	*bundle
+	bundleManager      *bundleManager
+	transpilerCacheDir string
+	kernelDebugging    bool
+}
+
+func NewScriptKernel(basePath, transpilerCacheDir string, kernelDebugging bool) (*kernel, error) {
+	if !filepath.IsAbs(basePath) {
+		absBaseDir, err := filepath.Abs(basePath)
 		if err != nil {
 			panic(err)
 		} else {
-			baseDir = absBaseDir
+			basePath = absBaseDir
 		}
 	}
 
-	if !strings.HasSuffix(baseDir, "/") {
-		baseDir = baseDir + "/"
+	if !strings.HasSuffix(basePath, "/") {
+		basePath = basePath + "/"
 	}
 
 	if !filepath.IsAbs(transpilerCacheDir) {
@@ -45,27 +56,16 @@ func NewScriptKernel(baseDir, transpilerCacheDir string, kernelDebugging bool) (
 	}
 
 	kernel := &kernel{
-		sandbox:            goja.New(),
-		baseDir:            baseDir,
 		transpilerCacheDir: transpilerCacheDir,
 		kernelDebugging:    kernelDebugging,
 	}
 
-	kernel.bundleManager = newBundleManager(kernel, baseDir)
-
-	kernel.constantDefiner = prepareDefineConstant(kernel.sandbox)
-	kernel.propertyDefiner = prepareDefineProperty(kernel.sandbox)
-	kernel.propertyDescriptor = preparePropertyDescriptor(kernel.sandbox)
-
-	if err := kernel.bundleManager.registerDefaults(kernel); err != nil {
+	kernel.bundleManager = newBundleManager(kernel, basePath)
+	bundle, err := newBundle(kernel, kernel_id, "kernel", basePath)
+	if err != nil {
 		return nil, err
 	}
-
-	adapter, err := newAdapter(kernel, kernel)
-	if err != nil {
-		return nil, errors.New(err)
-	}
-	kernel.adapter = adapter
+	kernel.bundle = bundle
 
 	// Pre-transpile all typescript sourcefiles that are out of date
 	if transpiler, err := newTranspiler(kernel); err != nil {
@@ -77,144 +77,6 @@ func NewScriptKernel(baseDir, transpilerCacheDir string, kernelDebugging bool) (
 	}
 
 	return kernel, nil
-}
-
-/**
- * The kernel is a special bundle type, which is the root bundle to be initialized and has
- * all privileges (PRIVILEGE_KERNEL) and can leave bundle boundaries.
- */
-type kernel struct {
-	sandbox            *goja.Runtime
-	bundleManager      *bundleManager
-	baseDir            string
-	transpilerCacheDir string
-	kernelDebugging    bool
-	propertyDefiner    goja.Callable
-	constantDefiner    set_constant
-	propertyDescriptor get_property
-	adapter            *adapter
-	exports            *exportAdapter
-	modules            []*module
-}
-
-func (k *kernel) findModuleByModuleFile(file string) *module {
-	filename := filepath.Base(file)
-	path := filepath.Dir(file)
-	for _, module := range k.modules {
-		if module.Origin().Filename() == filename && module.Origin().Path() == path {
-			return module
-		}
-	}
-	return nil
-}
-
-func (k *kernel) findModuleById(id string) *module {
-	for _, module := range k.modules {
-		if module.ID() == id {
-			return module
-		}
-	}
-	return nil
-}
-
-func (k *kernel) Path() string {
-	return k.baseDir
-}
-
-func (k *kernel) BundleExports() ExportAdapter {
-	return k.exports
-}
-
-func (k *kernel) getBundleExports() *goja.Object {
-	return k.exports.jsExports
-}
-
-func (k *kernel) getSandbox() *goja.Runtime {
-	return k.sandbox
-}
-
-func (k *kernel) LoadKernelModule(kernelModule KernelModuleDefinition) error {
-	filename := findScriptFile(kernelModule.ApiDefinitionFile(), k.baseDir)
-
-	origin := newOrigin(filename)
-	module, err := newModule(kernelModule.ID(), kernelModule.Name(), origin, k)
-	if err != nil {
-		return err
-	}
-
-	moduleBuilder := newModuleBuilder(module, k)
-	binder := kernelModule.ExtensionBinder()
-	binder(k, moduleBuilder)
-
-	return nil
-}
-
-func (k *kernel) EntryPoint(filename string) error {
-	filename = findScriptFile(filename, k.baseDir)
-
-	source, err := k.loadSource(filename)
-	if err != nil {
-		return errors.New(err)
-	}
-
-	id, err := uuid.NewV4()
-	if err != nil {
-		return err
-	}
-
-	origin := newOrigin(filename)
-	module, err := newModule(id.String(), "entrypoint", origin, k)
-	if err != nil {
-		return err
-	}
-
-	prog, err := compileJavascript(filename, source)
-	if err != nil {
-		return errors.New(err)
-	}
-
-	/*val, err := k.sandbox.RunProgram(prog)
-	if err != nil {
-		return errors.New(err)
-	}
-
-	if val.ExportType().Kind() != reflect.Func {
-		return errors.New(fmt.Sprintf("Modules are supposed to return a function: %s", val.Export()))
-	}
-
-	var call goja.Callable
-	k.getSandbox().ExportTo(val, &call)
-
-	retval, err := call(val, module.system)
-	if err != nil {
-		return errors.New(err)
-	}
-
-	if retval != goja.Undefined() && retval != goja.Null() {
-		return errors.New(
-			fmt.Sprintf("Modules initializers aren't supposed to return anything: %s", val.Export()))
-	}*/
-
-	return executeWithSystem(module, prog)
-}
-
-func (k *kernel) ID() string {
-	return kernel_id
-}
-
-func (k *kernel) Name() string {
-	return "kernel"
-}
-
-func (k *kernel) Origin() Origin {
-	return &moduleOrigin{
-		filename: "kernel",
-		path:     k.baseDir,
-	}
-}
-
-func (k *kernel) Exports() map[string]interface{} {
-	return make(map[string]interface{}, 0)
 }
 
 func (k *kernel) Privileged() bool {
@@ -232,62 +94,40 @@ func (k *kernel) SecurityInterceptor() SecurityInterceptor {
 	}
 }
 
-func (k *kernel) NewObject() *goja.Object {
-	return k.sandbox.NewObject()
+func (k *kernel) LoadKernelModule(kernelModule KernelModuleDefinition) error {
+	filename := findScriptFile(kernelModule.ApiDefinitionFile(), k.basePath)
+
+	origin := newOrigin(filename)
+	module, err := newModule(kernelModule.ID(), kernelModule.Name(), origin, k)
+	if err != nil {
+		return err
+	}
+	k.addModule(module)
+
+	moduleBuilder := newModuleBuilder(module, k)
+	binder := kernelModule.ExtensionBinder()
+	binder(k, moduleBuilder)
+
+	return nil
 }
 
-func (k *kernel) Define(property string, value interface{}) {
-	k.sandbox.Set(property, value)
-}
+func (k *kernel) EntryPoint(filename string) error {
+	id, err := uuid.NewV4()
+	if err != nil {
+		return err
+	}
 
-func (k *kernel) DefineProperty(object *goja.Object, property string, value interface{}, getter Getter, setter Setter) {
-	callPropertyDefiner(k.propertyDefiner, k.sandbox, object, property, value, getter, setter)
-}
+	_, err = k.loadScriptModule(id.String(), "entrypoint", filename, k.basePath, k.bundle)
+	if err != nil {
+		return err
+	}
 
-func (k *kernel) DefineConstant(object *goja.Object, constant string, value interface{}) {
-	k.constantDefiner(object, constant, value)
-}
-
-func (k *kernel) PropertyDescriptor(object *goja.Object, property string) (interface{}, bool, Getter, Setter) {
-	descriptor := k.propertyDescriptor(object, property)
-	return propertyDescriptor(k.sandbox, descriptor.ToObject(k.sandbox))
-}
-
-func (k *kernel) Export(value goja.Value, target interface{}) error {
-	return k.sandbox.ExportTo(value, target)
-}
-
-func (k *kernel) ToValue(value interface{}) goja.Value {
-	return k.sandbox.ToValue(value)
-}
-
-func (k *kernel) FreezeObject(object *goja.Object) {
-	_freezeObject(k.ToValue(object), k.sandbox)
-}
-
-func (k *kernel) getExports() *goja.Object {
-	return goja.Undefined().ToObject(k.sandbox)
-}
-
-func (k *kernel) securityInterceptor(caller Module, property string) bool {
-	return caller.Bundle().Privileged()
-}
-
-func (k *kernel) getVm() *goja.Runtime {
-	return k.sandbox
-}
-
-func (k *kernel) getAdapter() *adapter {
-	return k.adapter
-}
-
-func (k *kernel) registerModule(name string, dependencies []string, callback registerCallback, module Module) error {
-	return k.kernelRegisterModule(name, dependencies, callback, module, k)
+	return nil
 }
 
 func (k *kernel) defineKernelModule(module Module, filename string, exporter func(exports *goja.Object)) {
 	// Load the script definition file
-	_, err := k.loadScriptModule(module.ID(), module.Name(), filename, k.baseDir, module.Bundle())
+	_, err := k.loadScriptModule(module.ID(), module.Name(), filename, k.basePath, k.bundle)
 	if err != nil {
 		panic(errors.New(err))
 	}
@@ -390,7 +230,7 @@ func (k *kernel) loadContent(filename string) ([]byte, error) {
 	return ioutil.ReadFile(filename)
 }
 
-func (k *kernel) loadScriptModule(id, name, filename, parentPath string, bundle Bundle) (Module, error) {
+func (k *kernel) loadScriptModule(id, name, filename, parentPath string, bundle *bundle) (Module, error) {
 	if !filepath.IsAbs(filename) {
 		filename = findScriptFile(filename, parentPath)
 	}
@@ -407,51 +247,32 @@ func (k *kernel) loadScriptModule(id, name, filename, parentPath string, bundle 
 		if err != nil {
 			return nil, errors.New(err)
 		}
+		bundle.addModule(module)
 	}
 
-	prog, err := compileJavascript(filename, source)
+	bundle.pushLoaderStack(id)
+
+	// We expect a cleanly compiled module, that doesn't return anything
+	val, err := prepareJavascript(filename, source, bundle.getSandbox())
+
+	bundle.popLoaderStack()
+
 	if err != nil {
-		return nil, err
+		return nil, errors.New(err)
 	}
 
-	if err := executeWithSystem(module, prog); err != nil {
-		return nil, err
+	if val != goja.Undefined() && val != goja.Null() {
+		return nil, errors.New(fmt.Sprintf("Modules are not supposed to return anything: %s", val.Export()))
 	}
 
 	return module, nil
-	/*val, err := prepareJavascript(filename, source, bundle.getSandbox())
-	if err != nil {
-		return nil, errors.New(err)
-	}
-
-	bundle.getSandbox().R
-
-	if val.ExportType().Kind() != reflect.Func {
-		return nil, errors.New(fmt.Sprintf("Modules are supposed to return a function: %s", val.Export()))
-	}
-
-	var call goja.Callable
-	bundle.getSandbox().ExportTo(val, &call)
-
-	retval, err := call(val, module.system)
-	if err != nil {
-		return nil, errors.New(err)
-	}
-
-	if retval != goja.Undefined() && retval != goja.Null() {
-		return nil, errors.New(
-			fmt.Sprintf("Modules initializers aren't supposed to return anything: %s", val.Export()))
-	}
-
-	return module, nil*/
 }
 
-func (k *kernel) kernelRegisterModule(name string, dependencies []string,
-	callback registerCallback, module Module, bundle Bundle) error {
+func (k *kernel) kernelRegisterModule(module *module,
+	dependencies []string, callback registerCallback, bundle *bundle) error {
 
 	if k.kernelDebugging {
-		file := stringModuleOrigin(module)
-		fmt.Println(fmt.Sprintf("Loading %s from %s", name, file))
+		fmt.Println(fmt.Sprintf("Loading %s into %s", module.name, bundle.Name()))
 	}
 
 	exportFunction := func(name string, value goja.Value) {
@@ -460,7 +281,7 @@ func (k *kernel) kernelRegisterModule(name string, dependencies []string,
 
 	dependentModules := make([]Module, len(dependencies))
 	for i, filename := range dependencies {
-		moduleFile := findScriptFile(filename, module.Origin().Path())
+		moduleFile := findScriptFile(filename, module.origin.Path())
 
 		if dependentModule := bundle.findModuleByModuleFile(moduleFile); dependentModule == nil {
 			id, err := uuid.NewV4()
@@ -469,7 +290,7 @@ func (k *kernel) kernelRegisterModule(name string, dependencies []string,
 			}
 
 			moduleId := id.String()
-			m, err := k.loadScriptModule(moduleId, filename, filename, module.Origin().Path(), bundle)
+			m, err := k.loadScriptModule(moduleId, filename, filename, module.origin.Path(), bundle)
 			if err != nil {
 				panic(err)
 			}
@@ -489,7 +310,7 @@ func (k *kernel) kernelRegisterModule(name string, dependencies []string,
 	initializer := callback(exportFunction, context)
 
 	var setters []goja.Callable
-	if err := module.Export(initializer.Get("setters"), &setters); err != nil {
+	if err := module.export(initializer.Get("setters"), &setters); err != nil {
 		panic(err)
 	}
 
@@ -503,7 +324,7 @@ func (k *kernel) kernelRegisterModule(name string, dependencies []string,
 	}
 
 	var executable goja.Callable
-	if err := module.Export(execute, &executable); err != nil {
+	if err := module.export(execute, &executable); err != nil {
 		panic(err)
 	}
 

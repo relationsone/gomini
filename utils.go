@@ -17,22 +17,13 @@ type set_property func(object *goja.Object, propertyName string, value interface
 type set_constant func(object *goja.Object, propertyName string, value interface{})
 type get_property func(object *goja.Object, propertyName string) goja.Value
 
-type exportAdapter struct {
-	goExports map[string]interface{}
-	jsExports *goja.Object
-}
-
-func (ea *exportAdapter) Get(property string) interface{} {
-	return ea.goExports[property]
-}
-
-func stringModuleOrigin(module Module) string {
-	if module == nil {
+func stringOrigin(origin Origin) string {
+	if origin == nil {
 		return "no origin available"
 	}
 
-	path := module.Origin().Path()
-	filename := module.Origin().Filename()
+	path := origin.Path()
+	filename := origin.Filename()
 
 	return filepath.Join(path, filename)
 }
@@ -344,47 +335,4 @@ func preparePropertyDescriptor(runtime *goja.Runtime) get_property {
 		runtime.ExportTo(value, &property)
 		return property
 	}
-}
-
-func executeWithSystem(module *module, wrapped *goja.Program) error {
-	source := `
-	(function() {
-		return function(System, callback) {
-			callback(System);
-		}
-	})()
-	`
-
-	prog, err := compileJavascript("system::entrypoint", source)
-	if err != nil {
-		return err
-	}
-
-	runtime := module.bundle.getSandbox()
-	value, err := runtime.RunProgram(prog)
-	if err != nil {
-		return err
-	}
-
-	callback := func(call goja.FunctionCall) goja.Value {
-		val, err := runtime.RunProgram(wrapped)
-		if err != nil {
-			panic(err)
-		}
-		return val
-	}
-
-	var call goja.Callable
-	runtime.ExportTo(value, &call)
-
-	if val, err := call(goja.Undefined(), module.system, runtime.ToValue(callback)); err != nil {
-		return err
-	} else {
-		if val != goja.Undefined() && val != goja.Null() {
-			return errors.New(
-				fmt.Sprintf("Modules initializers aren't supposed to return anything: %s", val.Export()))
-		}
-	}
-
-	return nil
 }

@@ -28,8 +28,8 @@ type adapter struct {
 	adaptingCall adapter_function
 }
 
-func newAdapter(kernel *kernel, bundle Bundle) (*adapter, error) {
-	filename := findScriptFile("js/kernel/adapter.js", kernel.baseDir)
+func newAdapter(kernel *kernel, bundle Bundle, basePath string) (*adapter, error) {
+	filename := findScriptFile("js/kernel/adapter.js", basePath)
 	source, err := kernel.loadSource(filename)
 	if err != nil {
 		return nil, errors.New(err)

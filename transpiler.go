@@ -134,7 +134,7 @@ func (t *transpiler) _transpileSource(source string) (*string, error) {
 }
 
 func (t *transpiler) transpileAll() error {
-	if baseDir, err := filepath.Abs(t.kernel.baseDir); err != nil {
+	if baseDir, err := filepath.Abs(t.kernel.basePath); err != nil {
 		return err
 
 	} else {
@@ -176,7 +176,7 @@ func (t *transpiler) transpileAll() error {
 }
 
 func (t *transpiler) loadScript(filename string) (goja.Value, error) {
-	scriptFile := findScriptFile(filename, t.kernel.baseDir)
+	scriptFile := findScriptFile(filename, t.kernel.basePath)
 	scriptFile, err := filepath.Abs(scriptFile)
 	if err != nil {
 		return nil, err
