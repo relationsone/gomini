@@ -5,13 +5,15 @@ import (
 	"github.com/go-errors/errors"
 	"path/filepath"
 	"reflect"
+	"github.com/spf13/afero"
 )
 
 type bundle struct {
 	kernel             *kernel
 	id                 string
 	name               string
-	basePath           string
+	filesystem         afero.Fs
+	status             BundleStatus
 	sandbox            *goja.Runtime
 	adapter            *securityProxy
 	exports            *goja.Object
@@ -23,14 +25,14 @@ type bundle struct {
 	loaderStack        []string
 }
 
-func newBundle(kernel *kernel, id, name, basePath string) (*bundle, error) {
+func newBundle(kernel *kernel, filesystem afero.Fs, id, name string) (*bundle, error) {
 	sandbox := goja.New()
 
 	bundle := &bundle{
 		kernel:      kernel,
 		id:          id,
 		name:        name,
-		basePath:    basePath,
+		filesystem:  filesystem,
 		sandbox:     sandbox,
 		exports:     sandbox.NewObject(),
 		loaderStack: make([]string, 0),
@@ -44,22 +46,35 @@ func newBundle(kernel *kernel, id, name, basePath string) (*bundle, error) {
 		return nil, err
 	}
 
-	adapter, err := newSecurityProxy(kernel, bundle, basePath)
-	if err != nil {
-		return nil, errors.New(err)
-	}
-
-	bundle.propertyDefiner = prepareDefineProperty(sandbox)
-	bundle.constantDefiner = prepareDefineConstant(sandbox)
-	bundle.propertyDescriptor = preparePropertyDescriptor(sandbox)
-
-	if err := kernel.bundleManager.registerDefaults(bundle); err != nil {
-		return nil, err
-	}
-
-	bundle.adapter = adapter
-
 	return bundle, nil
+}
+
+func (b *bundle) init(kernel *kernel) error {
+	adapter, err := newSecurityProxy(kernel, b)
+	if err != nil {
+		return errors.New(err)
+	}
+
+	sandbox := b.getSandbox()
+	b.propertyDefiner = prepareDefineProperty(sandbox)
+	b.constantDefiner = prepareDefineConstant(sandbox)
+	b.propertyDescriptor = preparePropertyDescriptor(sandbox)
+
+	if err := kernel.bundleManager.registerDefaults(b); err != nil {
+		return err
+	}
+
+	b.adapter = adapter
+
+	return nil
+}
+
+func (b *bundle) Filesystem() afero.Fs {
+	return b.filesystem
+}
+
+func (b *bundle) Status() BundleStatus {
+	return b.status
 }
 
 func (b *bundle) findModuleByModuleFile(file string) *module {
@@ -100,10 +115,6 @@ func (b *bundle) ID() string {
 
 func (b *bundle) Name() string {
 	return b.name
-}
-
-func (b *bundle) Path() string {
-	return b.basePath
 }
 
 func (b *bundle) getBundleExports() *goja.Object {

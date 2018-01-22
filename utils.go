@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"github.com/dop251/goja/parser"
+	"github.com/spf13/afero"
 )
 
 type set_property func(object *goja.Object, propertyName string, value interface{}, getter Getter, setter Setter)
@@ -44,8 +45,8 @@ func isDefined(value goja.Value) bool {
 	return value != goja.Null() && value != goja.Undefined()
 }
 
-func fileExists(filename string) bool {
-	if _, err := os.Stat(filename); err != nil {
+func fileExists(filesystem afero.Fs, filename string) bool {
+	if _, err := filesystem.Stat(filename); err != nil {
 		if os.IsNotExist(err) {
 			return false
 		}
@@ -69,84 +70,25 @@ func hash(value string) string {
 	return hex.EncodeToString(sum)
 }
 
-func loadPlainJavascript(kernel *kernel, file, path string, sandbox *goja.Runtime) (goja.Value, error) {
-	filename := findScriptFile(file, path)
-	if source, err := kernel.loadSource(filename); err != nil {
+func loadPlainJavascript(kernel *kernel, filename string, bundle Bundle) (goja.Value, error) {
+	filename = kernel.findScriptFile(bundle, filename)
+	if prog, err := kernel.loadScriptSource(bundle, filename, true); err != nil {
 		return nil, err
 	} else {
-		return prepareJavascript(filename, source, sandbox)
+		return executeJavascript(prog, bundle)
 	}
 }
 
-func findScriptFile(filename string, baseDir string) string {
-	if !strings.HasPrefix(filename, "kernel/") {
-		// Make it a full path
-		filename = filepath.Join(baseDir, filename)
-	} else {
-		// Make it a full path
-		filename = filepath.Join(baseDir, "..", "@types", filename)
-	}
-
-	// Clean path (removes ../ and ./)
-	filename = filepath.Clean(filename)
-
-	// See if we already have an extension
-	if ext := filepath.Ext(filename); ext != "" {
-		// If filename exists, we can stop here
-		if fileExists(filename) {
-			return filename
-		}
-	}
-	candidate := filename + ".ts"
-	if fileExists(candidate) {
-		return candidate
-	}
-	candidate = filepath.Join(filename, "index.ts")
-	if fileExists(candidate) {
-		return candidate
-	}
-	candidate = filename + ".d.ts"
-	if fileExists(candidate) {
-		return candidate
-	}
-	candidate = filepath.Join(filename, "index.d.ts")
-	if fileExists(candidate) {
-		return candidate
-	}
-	candidate = filename + ".js"
-	if fileExists(candidate) {
-		return candidate
-	}
-	candidate = filename + ".js.gz"
-	if fileExists(candidate) {
-		return candidate
-	}
-	candidate = filename + ".ts.gz"
-	if fileExists(candidate) {
-		return candidate
-	}
-	candidate = filename + ".js.bz2"
-	if fileExists(candidate) {
-		return candidate
-	}
-	candidate = filename + ".ts.bz2"
-	if fileExists(candidate) {
-		return candidate
-	}
-	return filename
-}
-
-func prepareJavascript(filename string, source string, runtime *goja.Runtime) (goja.Value, error) {
+func prepareJavascript(filename string, source string, bundle Bundle) (goja.Value, error) {
 	if prog, err := compileJavascript(filename, source); err != nil {
 		return nil, err
-
 	} else {
-		if val, err := runtime.RunProgram(prog); err != nil {
-			return nil, err
-		} else {
-			return val, nil
-		}
+		return executeJavascript(prog, bundle)
 	}
+}
+
+func executeJavascript(prog *goja.Program, bundle Bundle) (goja.Value, error) {
+	return bundle.getSandbox().RunProgram(prog)
 }
 
 func compileJavascript(filename string, source string) (*goja.Program, error) {

@@ -9,12 +9,14 @@ import (
 	"runtime"
 	"github.com/go-errors/errors"
 	"fmt"
+	"github.com/spf13/afero"
 )
 
 const cacheJsonFile = "cache.json"
+const cacheVfsPath = "/kernel/cache"
 
 type transpiler struct {
-	vm                *goja.Runtime
+	runtime           *goja.Runtime
 	kernel            *kernel
 	transpiledModules []transpiledModule
 }
@@ -22,8 +24,9 @@ type transpiler struct {
 func newTranspiler(kernel *kernel) (*transpiler, error) {
 	var modules []transpiledModule
 
-	cacheFile := filepath.Join(kernel.transpilerCacheDir, cacheJsonFile)
-	if file, err := ioutil.ReadFile(cacheFile); err == nil {
+	// TODO cacheFile := filepath.Join(kernel.transpilerCachePath, cacheJsonFile)
+	cacheFile := filepath.Join(cacheVfsPath, cacheJsonFile)
+	if file, err := afero.ReadFile(kernel.Filesystem(), cacheFile); err == nil {
 		json.Unmarshal(file, &modules)
 	}
 
@@ -31,12 +34,12 @@ func newTranspiler(kernel *kernel) (*transpiler, error) {
 		modules = make([]transpiledModule, 0)
 	}
 
-	if !fileExists(kernel.transpilerCacheDir) {
-		os.Mkdir(kernel.transpilerCacheDir, os.ModePerm)
-	}
+	/* TODO if !fileExists(kernel.osfs, cacheVfsPath) {
+		os.Mkdir(cacheVfsPath, os.ModePerm)
+	}*/
 
 	transpiler := &transpiler{
-		vm:                nil,
+		runtime:           nil,
 		kernel:            kernel,
 		transpiledModules: modules,
 	}
@@ -44,20 +47,20 @@ func newTranspiler(kernel *kernel) (*transpiler, error) {
 }
 
 func (t *transpiler) initialize() {
-	if t.vm == nil {
+	if t.runtime == nil {
 		fmt.Println("Transpiler: Setting up typescript transpiler...")
 
-		t.vm = goja.New()
-		if _, err := t.loadScript("js/typescript"); err != nil {
+		t.runtime = goja.New()
+		if _, err := t.loadScript(t.kernel, "/js/typescript"); err != nil {
 			panic(err)
 		}
-		if _, err := t.loadScript("js/tsc"); err != nil {
+		if _, err := t.loadScript(t.kernel, "/js/tsc"); err != nil {
 			panic(err)
 		}
 	}
 }
 
-func (t *transpiler) transpileFile(path string) (*string, error) {
+func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) {
 	if !filepath.IsAbs(path) {
 		p, err := filepath.Abs(path)
 		if err != nil {
@@ -67,10 +70,11 @@ func (t *transpiler) transpileFile(path string) (*string, error) {
 	}
 
 	filename := hash(path)
-	cacheFile := filepath.Join(t.kernel.transpilerCacheDir, filename)
+	// TODO cacheFile := filepath.Join(t.kernel.transpilerCachePath, filename)
+	cacheFile := filepath.Join(cacheVfsPath, filename)
 
 	// Load typescript file content
-	data, err := t.kernel.loadContent(path)
+	data, err := t.kernel.loadContent(bundle, bundle.Filesystem(), path)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +83,7 @@ func (t *transpiler) transpileFile(path string) (*string, error) {
 	checksum := hash(code)
 	module := t.findTranspiledModule(path)
 
-	if fileExists(cacheFile) && module != nil && module.Checksum == checksum {
+	if fileExists(t.kernel.Filesystem(), cacheFile) && module != nil && module.Checksum == checksum {
 		fmt.Println(fmt.Sprintf("Transpiler: Already transpiled %s as %s...", path, cacheFile))
 		return nil, nil
 	}
@@ -97,7 +101,7 @@ func (t *transpiler) transpileFile(path string) (*string, error) {
 		return nil, err
 
 	} else {
-		if err := ioutil.WriteFile(cacheFile, []byte(*source), os.ModePerm); err != nil {
+		if err := afero.WriteFile(t.kernel.Filesystem(), cacheFile, []byte(*source), os.ModePerm); err != nil {
 			return nil, err
 		}
 
@@ -114,18 +118,18 @@ func (t *transpiler) _transpileSource(source string) (*string, error) {
 	t.initialize()
 
 	// Retrieve the transpiler function from the runtime
-	jsTranspiler := t.vm.Get("transpiler")
+	jsTranspiler := t.runtime.Get("transpiler")
 	if jsTranspiler == nil || jsTranspiler == goja.Null() {
 		panic(errors.New("transpiler function not available"))
 	}
 
 	var transpiler goja.Callable
-	if err := t.vm.ExportTo(jsTranspiler, &transpiler); err != nil {
+	if err := t.runtime.ExportTo(jsTranspiler, &transpiler); err != nil {
 		return nil, err
 	}
 
 	// Transpile
-	if val, err := transpiler(jsTranspiler, t.vm.ToValue(source)); err != nil {
+	if val, err := transpiler(jsTranspiler, t.runtime.ToValue(source)); err != nil {
 		return nil, err
 	} else {
 		source := val.String()
@@ -134,59 +138,58 @@ func (t *transpiler) _transpileSource(source string) (*string, error) {
 }
 
 func (t *transpiler) transpileAll() error {
-	if baseDir, err := filepath.Abs(t.kernel.basePath); err != nil {
-		return err
+	/* TODO if !fileExists(t.kernel.osfs, t.kernel.transpilerCachePath) {
+		os.Mkdir(t.kernel.transpilerCachePath, os.ModePerm)
+	}*/
 
-	} else {
-		tsDir := filepath.Clean(baseDir)
-
-		if !fileExists(t.kernel.transpilerCacheDir) {
-			os.Mkdir(t.kernel.transpilerCacheDir, os.ModePerm)
-		}
-
-		if err := filepath.Walk(tsDir, func(path string, info os.FileInfo, err error) error {
-			// Skip directories
-			if fi, err := os.Stat(path); err != nil {
-				return err
-			} else {
-				if fi.IsDir() {
-					return nil
-				}
-			}
-
-			if isTypeScript(path) {
-				if _, err := t.transpileFile(path); err != nil {
-					return err
-				}
-			}
-			return nil
-
-		}); err != nil {
+	if err := afero.Walk(t.kernel.filesystem, "/", func(path string, info os.FileInfo, err error) error {
+		// Skip directories
+		if fi, err := t.kernel.filesystem.Stat(path); err != nil {
 			return err
+		} else {
+			if fi.IsDir() {
+				return nil
+			}
 		}
+
+		if isTypeScript(path) {
+			if _, err := t.transpileFile(t.kernel, path); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	}); err != nil {
+		return err
 	}
 
 	// Remove transpiler from memory to free up some space
-	if t.vm != nil {
-		t.vm = nil
+	if t.runtime != nil {
+		t.runtime = nil
 		runtime.GC()
 	}
 
 	return nil
 }
 
-func (t *transpiler) loadScript(filename string) (goja.Value, error) {
-	scriptFile := findScriptFile(filename, t.kernel.basePath)
+func (t *transpiler) loadScript(bundle Bundle, filename string) (goja.Value, error) {
+	scriptFile := t.kernel.findScriptFile(t.kernel, filename)
 	scriptFile, err := filepath.Abs(scriptFile)
 	if err != nil {
 		return nil, err
 	}
-	if source, err := t.kernel.loadContent(scriptFile); err != nil {
+	source, err := t.kernel.loadContent(bundle, bundle.Filesystem(), scriptFile)
+	if err != nil {
 		return nil, err
 
-	} else {
-		return prepareJavascript(scriptFile, string(source), t.vm)
 	}
+
+	prog, err := compileJavascript(scriptFile, string(source))
+	if err != nil {
+		return nil, err
+	}
+
+	return t.runtime.RunProgram(prog)
 }
 
 func (t *transpiler) findTranspiledModule(filename string) *transpiledModule {
@@ -229,7 +232,8 @@ func (t *transpiler) addTranspiledModule(path, cacheFile, code string) error {
 }
 
 func (t *transpiler) storeModuleCacheInformation() error {
-	file := filepath.Join(t.kernel.transpilerCacheDir, cacheJsonFile)
+	// TODO file := filepath.Join(t.kernel.transpilerCachePath, cacheJsonFile)
+	file := filepath.Join(cacheVfsPath, cacheJsonFile)
 	os.Remove(file)
 	if data, err := json.Marshal(t.transpiledModules); err != nil {
 		return err

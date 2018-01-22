@@ -1,6 +1,9 @@
 package gomini
 
-import "github.com/dop251/goja"
+import (
+	"github.com/dop251/goja"
+	"github.com/spf13/afero"
+)
 
 type Getter func() (value interface{})
 type Setter func(value interface{})
@@ -23,13 +26,26 @@ type Origin interface {
 	Path() string
 }
 
+type BundleStatus int
+
+const (
+	BundleStatusStopped     BundleStatus = iota
+	BundleStatusStarted
+	BundleStatusStarting
+	BundleStatusStopping
+	BundleStatusDownloading
+	BundleStatusUpdating
+	BundleStatusFailed
+)
+
 type Bundle interface {
 	ID() string
 	Name() string
-	Path() string
 	Privileged() bool
 	SecurityInterceptor() SecurityInterceptor
 	Export(value goja.Value, target interface{}) error
+	Status() BundleStatus
+	Filesystem() afero.Fs
 
 	NewObject() *goja.Object
 	ToValue(value interface{}) goja.Value
@@ -96,4 +112,8 @@ type ScriptExtension interface {
 
 type ExportAdapter interface {
 	Get(property string) interface{}
+}
+
+type ResourceLoader interface {
+	LoadResource(kernel *kernel, filesystem afero.Fs, filename string) ([]byte, error)
 }

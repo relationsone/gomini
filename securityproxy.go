@@ -28,14 +28,14 @@ type securityProxy struct {
 	adaptingCall adapter_function
 }
 
-func newSecurityProxy(kernel *kernel, bundle Bundle, basePath string) (*securityProxy, error) {
-	filename := findScriptFile("js/kernel/securityProxy.js", basePath)
-	source, err := kernel.loadSource(filename)
+func newSecurityProxy(kernel *kernel, bundle Bundle) (*securityProxy, error) {
+	filename := kernel.findScriptFile(kernel, "/js/kernel/securityProxy.js")
+	prog, err := kernel.loadScriptSource(bundle, filename, true)
 	if err != nil {
 		return nil, errors.New(err)
 	}
 
-	value, err := prepareJavascript(filename, source, bundle.getSandbox())
+	value, err := executeJavascript(prog, bundle)
 	if err != nil {
 		return nil, errors.New(err)
 	}
@@ -95,6 +95,15 @@ func (s *securityProxy) adapt(source, target *goja.Object, origin Bundle, caller
 
 			return newObject
 		}
+
+		caller.getSandbox().NewProxy(target, &goja.ProxyTrapConfig{
+			Construct: func(target *goja.Object, argumentsList []goja.Value, newTarget *goja.Object) *goja.Object {
+				return construct(argumentsList)
+			},
+			Apply: func(target *goja.Object, this *goja.Object, argumentsList []goja.Value) goja.Value {
+				return nil
+			},
+		}, true)
 
 		proxy := caller.getSandbox().CreateFunctionProxy(call, construct)
 		return target.Set(property, proxy)

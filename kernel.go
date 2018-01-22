@@ -11,6 +11,8 @@ import (
 	"compress/bzip2"
 	"bytes"
 	"github.com/satori/go.uuid"
+	"github.com/spf13/afero"
+	"github.com/relationsone/bacc"
 )
 
 const kernel_id = "76141a6c-0aec-4973-b04b-8fdd54753e03"
@@ -24,48 +26,30 @@ type registerCallback func(export registerExport, context *goja.Object) *goja.Ob
  */
 type kernel struct {
 	*bundle
-	bundleManager      *bundleManager
-	transpilerCacheDir string
-	kernelDebugging    bool
+	osfs            afero.Fs
+	bundleManager   *bundleManager
+	keyManager      bacc.KeyManager
+	kernelDebugging bool
+	resourceLoader  ResourceLoader
+	scriptCache     map[string]*goja.Program
 }
 
-func NewScriptKernel(basePath, transpilerCacheDir string, kernelDebugging bool) (*kernel, error) {
-	if !filepath.IsAbs(basePath) {
-		absBaseDir, err := filepath.Abs(basePath)
-		if err != nil {
-			panic(err)
-		} else {
-			basePath = absBaseDir
-		}
-	}
-
-	if !strings.HasSuffix(basePath, "/") {
-		basePath = basePath + "/"
-	}
-
-	if !filepath.IsAbs(transpilerCacheDir) {
-		d, err := filepath.Abs(transpilerCacheDir)
-		if err != nil {
-			return nil, errors.New(err)
-		}
-		transpilerCacheDir = d
-	}
-
-	if !strings.HasSuffix(transpilerCacheDir, "/") {
-		transpilerCacheDir = transpilerCacheDir + "/"
-	}
-
+func NewScriptKernel(osfs, bundlefs afero.Fs, kernelDebugging bool) (*kernel, error) {
 	kernel := &kernel{
-		transpilerCacheDir: transpilerCacheDir,
-		kernelDebugging:    kernelDebugging,
+		osfs:            osfs,
+		kernelDebugging: kernelDebugging,
+		resourceLoader:  newResourceLoader(),
+		scriptCache:     make(map[string]*goja.Program),
 	}
 
-	kernel.bundleManager = newBundleManager(kernel, basePath)
-	bundle, err := newBundle(kernel, kernel_id, "kernel", basePath)
+
+	kernel.bundleManager = newBundleManager(kernel)
+	bundle, err := newBundle(kernel, bundlefs, kernel_id, "kernel")
 	if err != nil {
 		return nil, err
 	}
 	kernel.bundle = bundle
+	kernel.bundle.init(kernel)
 
 	// Pre-transpile all typescript sourcefiles that are out of date
 	if transpiler, err := newTranspiler(kernel); err != nil {
@@ -77,6 +61,13 @@ func NewScriptKernel(basePath, transpilerCacheDir string, kernelDebugging bool) 
 	}
 
 	return kernel, nil
+}
+
+func (k *kernel) Start() error {
+	if err := k.bundleManager.start(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (k *kernel) Privileged() bool {
@@ -95,7 +86,7 @@ func (k *kernel) SecurityInterceptor() SecurityInterceptor {
 }
 
 func (k *kernel) LoadKernelModule(kernelModule KernelModuleDefinition) error {
-	filename := findScriptFile(kernelModule.ApiDefinitionFile(), k.basePath)
+	filename := k.findScriptFile(k, kernelModule.ApiDefinitionFile())
 
 	origin := newOrigin(filename)
 	module, err := newModule(kernelModule.ID(), kernelModule.Name(), origin, k)
@@ -117,7 +108,7 @@ func (k *kernel) EntryPoint(filename string) error {
 		return err
 	}
 
-	_, err = k.loadScriptModule(id.String(), "entrypoint", filename, k.basePath, k.bundle)
+	_, err = k.loadScriptModule(id.String(), "entrypoint", filename, "/", k.bundle)
 	if err != nil {
 		return err
 	}
@@ -127,7 +118,7 @@ func (k *kernel) EntryPoint(filename string) error {
 
 func (k *kernel) defineKernelModule(module Module, filename string, exporter func(exports *goja.Object)) {
 	// Load the script definition file
-	_, err := k.loadScriptModule(module.ID(), module.Name(), filename, k.basePath, k.bundle)
+	_, err := k.loadScriptModule(module.ID(), module.Name(), filename, "/", k.bundle)
 	if err != nil {
 		panic(errors.New(err))
 	}
@@ -139,16 +130,17 @@ func (k *kernel) defineKernelModule(module Module, filename string, exporter fun
 	module.Bundle().FreezeObject(module.getModuleExports())
 }
 
-func (k *kernel) loadSource(filename string) (string, error) {
+func (k *kernel) loadSource(bundle Bundle, filename string) (string, error) {
 	if isTypeScript(filename) {
 		// Is pre-transpiled?
-		cacheFilename := filepath.Join(k.transpilerCacheDir, hash(filename))
-		if !fileExists(cacheFilename) {
+		// TODO cacheFilename := filepath.Join(k.transpilerCachePath, hash(filename))
+		cacheFilename := filepath.Join(cacheVfsPath, hash(filename))
+		if !fileExists(k.Filesystem(), cacheFilename) {
 			if k.kernelDebugging {
 				fmt.Println(fmt.Sprintf("Kernel: Loading scriptfile '%s' with live transpiler", filename))
 			}
 
-			source, err := k.transpile(filename)
+			source, err := k.transpile(bundle, filename)
 			if err != nil {
 				return "", err
 			}
@@ -165,60 +157,69 @@ func (k *kernel) loadSource(filename string) (string, error) {
 			fmt.Println(fmt.Sprintf("Kernel: Loading scriptfile '%s' from pretranspiled cache: %s", filename, cacheFilename))
 		}
 
-		filename = cacheFilename
+		if data, err := k.loadContent(bundle, k.Filesystem(), cacheFilename); err != nil {
+			return "", err
+		} else {
+			return string(data), nil
+		}
 	}
-	if data, err := k.loadContent(filename); err != nil {
+	if data, err := k.loadContent(bundle, bundle.Filesystem(), filename); err != nil {
 		return "", err
 	} else {
 		return string(data), nil
 	}
 }
 
-func (k *kernel) transpile(filename string) (*string, error) {
+func (k *kernel) transpile(bundle Bundle, filename string) (*string, error) {
 	transpiler, err := newTranspiler(k)
 	if err != nil {
 		return nil, errors.New(err)
 	}
-	return transpiler.transpileFile(filename)
+	return transpiler.transpileFile(bundle, filename)
 }
 
-func (k *kernel) loadContent(filename string) ([]byte, error) {
+func (k *kernel) loadContent(bundle Bundle, filesystem afero.Fs, filename string) ([]byte, error) {
 	if k.kernelDebugging {
-		fmt.Println(fmt.Sprintf("Kernel: Loading scriptfile: %s", filename))
+		fmt.Println(fmt.Sprintf("Kernel: Loading scriptfile: %s:/%s", bundle.Name(), filename))
+	}
+	b, err := k.resourceLoader.LoadResource(k, filesystem, filename)
+	if err != nil {
+		return nil, err
 	}
 	if strings.HasSuffix(filename, ".gz") {
 		if k.kernelDebugging {
 			fmt.Println(fmt.Sprintf("Kernel: GZIP Decompressing scriptfile: %s", filename))
 		}
-		if b, err := ioutil.ReadFile(filename); err != nil {
+
+		if reader, err := gzip.NewReader(bytes.NewReader(b)); err != nil {
 			return nil, err
 		} else {
-			if reader, err := gzip.NewReader(bytes.NewReader(b)); err != nil {
-				return nil, err
-			} else {
-				return ioutil.ReadAll(reader)
-			}
+			return ioutil.ReadAll(reader)
 		}
-	}
-	if strings.HasSuffix(filename, ".bz2") {
+	} else if strings.HasSuffix(filename, ".bz2") {
 		if k.kernelDebugging {
 			fmt.Println(fmt.Sprintf("Kernel: BZIP Decompressing scriptfile: %s", filename))
 		}
-		if b, err := ioutil.ReadFile(filename); err != nil {
-			return nil, err
-		} else {
-			return ioutil.ReadAll(bzip2.NewReader(bytes.NewReader(b)))
-		}
+		return ioutil.ReadAll(bzip2.NewReader(bytes.NewReader(b)))
 	}
-	return ioutil.ReadFile(filename)
+	return b, nil
 }
 
 func (k *kernel) loadScriptModule(id, name, filename, parentPath string, bundle *bundle) (Module, error) {
-	if !filepath.IsAbs(filename) {
-		filename = findScriptFile(filename, parentPath)
+	loadingBundle := bundle
+
+	// TODO generalize by testing for bundle exports first
+	if strings.HasPrefix(filename, "kernel/") {
+		filename = filepath.Join("/@types", filename)
+		loadingBundle = k.bundle
 	}
 
-	source, err := k.loadSource(filename)
+	if !filepath.IsAbs(filename) {
+		filename = filepath.Join(parentPath, filename)
+		filename = k.findScriptFile(bundle, filename)
+	}
+
+	prog, err := k.loadScriptSource(loadingBundle, filename, true)
 	if err != nil {
 		return nil, errors.New(err)
 	}
@@ -236,7 +237,7 @@ func (k *kernel) loadScriptModule(id, name, filename, parentPath string, bundle 
 	bundle.pushLoaderStack(id)
 
 	// We expect a cleanly compiled module, that doesn't return anything
-	val, err := prepareJavascript(filename, source, bundle.getSandbox())
+	val, err := executeJavascript(prog, bundle)
 
 	bundle.popLoaderStack()
 
@@ -251,9 +252,7 @@ func (k *kernel) loadScriptModule(id, name, filename, parentPath string, bundle 
 	return module, nil
 }
 
-func (k *kernel) kernelRegisterModule(module *module,
-	dependencies []string, callback registerCallback, bundle *bundle) error {
-
+func (k *kernel) kernelRegisterModule(module *module, dependencies []string, callback registerCallback, bundle *bundle) error {
 	if k.kernelDebugging {
 		fmt.Println(fmt.Sprintf("Kernel: Loading module %s into bundle %s", module.name, bundle.Name()))
 	}
@@ -264,7 +263,7 @@ func (k *kernel) kernelRegisterModule(module *module,
 
 	dependentModules := make([]Module, len(dependencies))
 	for i, filename := range dependencies {
-		moduleFile := findScriptFile(filename, module.origin.Path())
+		moduleFile := k.findScriptFile(bundle, filename)
 
 		if dependentModule := bundle.findModuleByModuleFile(moduleFile); dependentModule == nil {
 			id, err := uuid.NewV4()
@@ -275,6 +274,8 @@ func (k *kernel) kernelRegisterModule(module *module,
 			moduleId := id.String()
 			m, err := k.loadScriptModule(moduleId, filename, filename, module.origin.Path(), bundle)
 			if err != nil {
+				m, err = k.lookupBundleExports(moduleId, filename, bundle)
+
 				panic(err)
 			}
 			dependentModules[i] = m
@@ -333,4 +334,94 @@ func (k *kernel) adaptBundleExports(origin Bundle, caller Bundle) (*goja.Object,
 
 func (k *kernel) adaptBundleObject(source *goja.Object, target *goja.Object, origin Bundle, caller Bundle) error {
 	return origin.getAdapter().adapt(source, target, origin, caller)
+}
+
+func (k *kernel) loadScriptSource(bundle Bundle, filename string, allowCaching bool) (*goja.Program, error) {
+	if !strings.HasPrefix(filename, "system::") && !filepath.IsAbs(filename) {
+		return nil, fmt.Errorf("provided path is not absolute: %s", filename)
+	}
+
+	var prog *goja.Program
+	if allowCaching {
+		prog = k.scriptCache[filename]
+	}
+
+	if prog == nil {
+		source, err := k.loadSource(bundle, filename)
+		if err != nil {
+			return nil, err
+		}
+
+		prog, err = compileJavascript(filename, source)
+		if err != nil {
+			return nil, err
+		}
+
+		if prog != nil && allowCaching {
+			k.scriptCache[filename] = prog
+		}
+	}
+
+	if prog == nil {
+		return nil, fmt.Errorf("could not load script file: %s", filename)
+	}
+
+	return prog, nil
+}
+
+func (k *kernel) findScriptFile(bundle Bundle, filename string) string {
+	filesystem := bundle.Filesystem()
+
+	// TODO generalize by testing for bundle exports first
+	if strings.HasPrefix(filename, "kernel/") {
+		filename = filepath.Join("/@types", filename)
+	}
+
+	// Clean path (removes ../ and ./)
+	filename = filepath.Clean(filename)
+
+	// See if we already have an extension
+	if ext := filepath.Ext(filename); ext != "" {
+		// If filename exists, we can stop here
+		if fileExists(filesystem, filename) {
+			return filename
+		}
+	}
+	candidate := filename + ".ts"
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	candidate = filepath.Join(filename, "index.ts")
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	candidate = filename + ".d.ts"
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	candidate = filepath.Join(filename, "index.d.ts")
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	candidate = filename + ".js"
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	candidate = filename + ".js.gz"
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	candidate = filename + ".ts.gz"
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	candidate = filename + ".js.bz2"
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	candidate = filename + ".ts.bz2"
+	if fileExists(filesystem, candidate) {
+		return candidate
+	}
+	return filename
 }
