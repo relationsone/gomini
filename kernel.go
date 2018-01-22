@@ -274,7 +274,7 @@ func (k *kernel) kernelRegisterModule(module *module, dependencies []string, cal
 			moduleId := id.String()
 			m, err := k.loadScriptModule(moduleId, filename, filename, module.origin.Path(), bundle)
 			if err != nil {
-				m, err = k.lookupBundleExports(moduleId, filename, bundle)
+				// TODO m, err = k.lookupBundleExports(moduleId, filename, bundle)
 
 				panic(err)
 			}
