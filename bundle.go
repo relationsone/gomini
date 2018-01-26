@@ -88,6 +88,15 @@ func (b *bundle) findModuleByModuleFile(file string) *module {
 	return nil
 }
 
+func (b *bundle) findModuleByName(name string) *module {
+	for _, module := range b.modules {
+		if module.Name() == name {
+			return module
+		}
+	}
+	return nil
+}
+
 func (b *bundle) findModuleById(id string) *module {
 	for _, module := range b.modules {
 		if module.ID() == id {

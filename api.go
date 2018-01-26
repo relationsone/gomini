@@ -59,6 +59,7 @@ type Bundle interface {
 	getBundleExports() *goja.Object
 	getAdapter() *securityProxy
 	findModuleById(id string) *module
+	findModuleByName(name string) *module
 	findModuleByModuleFile(file string) *module
 	addModule(module *module)
 	removeModule(module *module)

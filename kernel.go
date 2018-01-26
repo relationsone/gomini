@@ -42,14 +42,16 @@ func NewScriptKernel(osfs, bundlefs afero.Fs, kernelDebugging bool) (*kernel, er
 		scriptCache:     make(map[string]*goja.Program),
 	}
 
-
 	kernel.bundleManager = newBundleManager(kernel)
 	bundle, err := newBundle(kernel, bundlefs, kernel_id, "kernel")
 	if err != nil {
 		return nil, err
 	}
+
 	kernel.bundle = bundle
-	kernel.bundle.init(kernel)
+	if err := kernel.bundle.init(kernel); err != nil {
+		return nil, errors.New(err)
+	}
 
 	// Pre-transpile all typescript sourcefiles that are out of date
 	if transpiler, err := newTranspiler(kernel); err != nil {
@@ -274,9 +276,12 @@ func (k *kernel) kernelRegisterModule(module *module, dependencies []string, cal
 			moduleId := id.String()
 			m, err := k.loadScriptModule(moduleId, filename, filename, module.origin.Path(), bundle)
 			if err != nil {
-				// TODO m, err = k.lookupBundleExports(moduleId, filename, bundle)
+				m = bundle.findModuleByName(filename)
+				if m == nil {
+					// TODO m, err = k.lookupBundleExports(moduleId, filename, bundle)
 
-				panic(err)
+					panic(err)
+				}
 			}
 			dependentModules[i] = m
 

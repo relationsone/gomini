@@ -103,7 +103,7 @@ func (s *securityProxy) adapt(source, target *goja.Object, origin Bundle, caller
 			Apply: func(target *goja.Object, this *goja.Object, argumentsList []goja.Value) goja.Value {
 				return nil
 			},
-		}, true)
+		}, true, false)
 
 		proxy := caller.getSandbox().CreateFunctionProxy(call, construct)
 		return target.Set(property, proxy)
