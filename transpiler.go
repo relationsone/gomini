@@ -23,7 +23,6 @@ type transpiler struct {
 func newTranspiler(kernel *kernel) (*transpiler, error) {
 	var modules []transpiledModule
 
-	// TODO cacheFile := filepath.Join(kernel.transpilerCachePath, cacheJsonFile)
 	cacheFile := filepath.Join(cacheVfsPath, cacheJsonFile)
 	if file, err := afero.ReadFile(kernel.Filesystem(), cacheFile); err == nil {
 		json.Unmarshal(file, &modules)
@@ -32,10 +31,6 @@ func newTranspiler(kernel *kernel) (*transpiler, error) {
 	if modules == nil {
 		modules = make([]transpiledModule, 0)
 	}
-
-	/* TODO if !fileExists(kernel.osfs, cacheVfsPath) {
-		os.Mkdir(cacheVfsPath, os.ModePerm)
-	}*/
 
 	transpiler := &transpiler{
 		runtime:           nil,
@@ -69,7 +64,6 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 	}
 
 	filename := hash(path)
-	// TODO cacheFile := filepath.Join(t.kernel.transpilerCachePath, filename)
 	cacheFile := filepath.Join(cacheVfsPath, filename)
 
 	// Load typescript file content
@@ -137,10 +131,6 @@ func (t *transpiler) _transpileSource(source string) (*string, error) {
 }
 
 func (t *transpiler) transpileAll() error {
-	/* TODO if !fileExists(t.kernel.osfs, t.kernel.transpilerCachePath) {
-		os.Mkdir(t.kernel.transpilerCachePath, os.ModePerm)
-	}*/
-
 	if err := afero.Walk(t.kernel.filesystem, "/", func(path string, info os.FileInfo, err error) error {
 		// Skip directories
 		if fi, err := t.kernel.filesystem.Stat(path); err != nil {
@@ -231,7 +221,6 @@ func (t *transpiler) addTranspiledModule(path, cacheFile, code string) error {
 }
 
 func (t *transpiler) storeModuleCacheInformation() error {
-	// TODO file := filepath.Join(t.kernel.transpilerCachePath, cacheJsonFile)
 	file := filepath.Join(cacheVfsPath, cacheJsonFile)
 	t.kernel.filesystem.Remove(file)
 	if data, err := json.Marshal(t.transpiledModules); err != nil {
