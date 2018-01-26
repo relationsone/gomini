@@ -153,6 +153,10 @@ func (b *bundle) NewObject() *goja.Object {
 	return b.sandbox.NewObject()
 }
 
+func (b *bundle) NewException(err error) *goja.Object {
+	return b.sandbox.NewGoError(err)
+}
+
 func (b *bundle) Define(property string, value interface{}) {
 	b.sandbox.Set(property, value)
 }

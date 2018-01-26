@@ -48,6 +48,7 @@ type Bundle interface {
 	Filesystem() afero.Fs
 
 	NewObject() *goja.Object
+	NewException(err error) *goja.Object
 	ToValue(value interface{}) goja.Value
 	Define(property string, value interface{})
 	DefineProperty(object *goja.Object, property string, value interface{}, getter Getter, setter Setter)
