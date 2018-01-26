@@ -4,7 +4,6 @@ import (
 	"github.com/dop251/goja"
 	"path/filepath"
 	"os"
-	"io/ioutil"
 	"encoding/json"
 	"runtime"
 	"github.com/go-errors/errors"
@@ -90,7 +89,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 
 	// Module exists but either cache file is missing or checksum doesn't match anymore
 	// Try to remove old cache file
-	os.Remove(cacheFile)
+	t.kernel.filesystem.Remove(cacheFile)
 
 	// Remove old module definition
 	t.removeTranspiledModule(module)
@@ -234,11 +233,13 @@ func (t *transpiler) addTranspiledModule(path, cacheFile, code string) error {
 func (t *transpiler) storeModuleCacheInformation() error {
 	// TODO file := filepath.Join(t.kernel.transpilerCachePath, cacheJsonFile)
 	file := filepath.Join(cacheVfsPath, cacheJsonFile)
-	os.Remove(file)
+	t.kernel.filesystem.Remove(file)
 	if data, err := json.Marshal(t.transpiledModules); err != nil {
 		return err
 	} else {
-		ioutil.WriteFile(file, data, os.ModePerm)
+		if err := afero.WriteFile(t.kernel.filesystem, file, data, os.ModePerm); err != nil {
+			return err
+		}
 	}
 	return nil
 }
