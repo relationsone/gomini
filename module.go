@@ -39,6 +39,7 @@ type module struct {
 	origin  Origin
 	bundle  Bundle
 	exports *goja.Object
+	kernel  bool
 }
 
 func newModule(moduleId, name string, origin Origin, bundle Bundle) (*module, error) {

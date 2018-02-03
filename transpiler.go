@@ -63,8 +63,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 		path = p
 	}
 
-	filename := hash(path)
-	cacheFile := filepath.Join(cacheVfsPath, filename)
+	cacheFile := filepath.Join(cacheVfsPath, tsCacheFilename(path, bundle, t.kernel))
 
 	// Load typescript file content
 	data, err := t.kernel.loadContent(bundle, bundle.Filesystem(), path)
@@ -76,9 +75,23 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 	checksum := hash(code)
 	module := t.findTranspiledModule(path)
 
-	if fileExists(t.kernel.Filesystem(), cacheFile) && module != nil && module.Checksum == checksum {
-		fmt.Println(fmt.Sprintf("Transpiler: Already transpiled %s as %s...", path, cacheFile))
-		return nil, nil
+	isCached := fileExists(t.kernel.Filesystem(), cacheFile)
+	if isCached && module != nil && module.Checksum == checksum {
+		fmt.Println(fmt.Sprintf("Transpiler: Already transpiled %s:/%s as kernel:/%s...", bundle.Name(), path, cacheFile))
+		f, err := t.kernel.Filesystem().Open(cacheFile)
+		if err != nil {
+			return nil, err
+		}
+		b, err := afero.ReadAll(f)
+		if err != nil {
+			return nil, err
+		}
+		source := string(b)
+		return &source, nil
+	}
+
+	if isCached {
+		fmt.Println(fmt.Sprintf("Transpiler: Cache is out of date for %s:/%s as kernel:/%s...", bundle.Name(), path, cacheFile))
 	}
 
 	// Module exists but either cache file is missing or checksum doesn't match anymore
@@ -88,7 +101,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 	// Remove old module definition
 	t.removeTranspiledModule(module)
 
-	fmt.Println(fmt.Sprintf("Transpiler: Transpiling %s to %s...", path, cacheFile))
+	fmt.Println(fmt.Sprintf("Transpiler: Transpiling %s:/%s to kernel:/%s...", bundle.Name(), path, cacheFile))
 
 	if source, err := t._transpileSource(code); err != nil {
 		return nil, err
@@ -98,7 +111,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 			return nil, err
 		}
 
-		if err := t.addTranspiledModule(path, cacheFile, code); err != nil {
+		if err := t.addTranspiledModule(path, cacheFile, code, bundle); err != nil {
 			return nil, err
 		}
 
@@ -130,10 +143,10 @@ func (t *transpiler) _transpileSource(source string) (*string, error) {
 	}
 }
 
-func (t *transpiler) transpileAll() error {
-	if err := afero.Walk(t.kernel.filesystem, "/", func(path string, info os.FileInfo, err error) error {
+func (t *transpiler) transpileAll(bundle Bundle, root string) error {
+	if err := afero.Walk(bundle.Filesystem(), root, func(path string, info os.FileInfo, err error) error {
 		// Skip directories
-		if fi, err := t.kernel.filesystem.Stat(path); err != nil {
+		if fi, err := bundle.Filesystem().Stat(path); err != nil {
 			return err
 		} else {
 			if fi.IsDir() {
@@ -142,7 +155,7 @@ func (t *transpiler) transpileAll() error {
 		}
 
 		if isTypeScript(path) {
-			if _, err := t.transpileFile(t.kernel, path); err != nil {
+			if _, err := t.transpileFile(bundle, path); err != nil {
 				return err
 			}
 		}
@@ -209,8 +222,8 @@ func (t *transpiler) removeTranspiledModule(module *transpiledModule) error {
 	return nil
 }
 
-func (t *transpiler) addTranspiledModule(path, cacheFile, code string) error {
-	module := transpiledModule{path, cacheFile, hash(code)}
+func (t *transpiler) addTranspiledModule(path, cacheFile, code string, bundle Bundle) error {
+	module := transpiledModule{path, cacheFile, hash(code), bundle.ID()}
 	t.transpiledModules = append(t.transpiledModules, module)
 
 	// Store transpiled module information
@@ -237,4 +250,5 @@ type transpiledModule struct {
 	OriginalFile string `json:"originalFile"`
 	CacheFile    string `json:"cache_file"`
 	Checksum     string `json:"checksum"`
+	BundleId     string `json:"bundleid"`
 }

@@ -20,39 +20,6 @@ const (
 	jsSystem   = "/js/kernel/system.js"
 )
 
-type bundlePrivilege int16
-
-func (b bundlePrivilege) ToString() (name string) {
-	switch b {
-	case privilegeKernel:
-		name = "PRIVILEGE_KERNEL"
-
-	case privilegeDatabase:
-		name = "PRIVILEGE_DATABASE"
-	case privilegeEncoding:
-		name = "PRIVILEGE_ENCODING"
-	case privilegeGenerate:
-		name = "PRIVILEGE_GENERATE"
-	case privilegeHttp:
-		name = "PRIVILEGE_HTTP"
-
-	case privilegeConfigStorage:
-		name = "PRIVILEGE_CONFIG_STORAGE"
-	}
-	return
-}
-
-const (
-	privilegeKernel bundlePrivilege = iota
-
-	privilegeDatabase
-	privilegeEncoding
-	privilegeGenerate
-	privilegeHttp
-
-	privilegeConfigStorage
-)
-
 var errNoSuchBundle = errors.New("the given path is not a bundle")
 
 func newBundleManager(kernel *kernel) *bundleManager {
@@ -66,6 +33,11 @@ type bundleManager struct {
 }
 
 func (bm *bundleManager) start() error {
+	transpiler, err := newTranspiler(bm.kernel)
+	if err != nil {
+		return err
+	}
+
 	return afero.Walk(bm.kernel.filesystem, appsPath, func(path string, info os.FileInfo, err error) error {
 		if path == appsPath {
 			return nil
@@ -83,7 +55,7 @@ func (bm *bundleManager) start() error {
 				return err
 			}
 
-			bundle, err := bm.newBundle(path, filesystem)
+			bundle, err := bm.newBundle(path, filesystem, transpiler)
 			if err != nil {
 				return err
 			}
@@ -101,22 +73,43 @@ func (bm *bundleManager) createBundleFilesystem(path string, info os.FileInfo) (
 		return nil, err
 	}
 
+	var compositefs *CompositeFs = nil
 	if info.IsDir() {
 		rofs := afero.NewReadOnlyFs(bm.kernel.filesystem)
 		rootfs := afero.NewBasePathFs(rofs, path)
-		return NewCompositeFs(rootfs), nil
+		compositefs = NewCompositeFs(rootfs)
 	}
 
 	if filepath.Ext(path) == "bacc" {
-		bacc.NewBaccFilesystem(path, bm.kernel.keyManager)
+		rootfs, err := bacc.NewBaccFilesystem(path, bm.kernel.keyManager)
+		if err != nil {
+			return nil, err
+		}
+		compositefs = NewCompositeFs(rootfs)
+	}
+
+	if compositefs != nil {
+		exportfs := newExportFs()
+		// TODO Add privilege checks to only make requested modules available
+		root := exportfs.root
+		for _, m := range bm.kernel.modules {
+			if m.kernel {
+				if err := root.createFile(m.origin.Filename(), []byte{}, m); err != nil {
+					return nil, err
+				}
+			}
+		}
+		compositefs.Mount(exportfs, "/kernel/@types/")
+
+		return compositefs, nil
 	}
 
 	return nil, errNoSuchBundle
 }
 
-func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs) (Bundle, error) {
+func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs, transpiler *transpiler) (Bundle, error) {
 	bundleFile := filepath.Join(path, bundleJson)
-	fmt.Println(fmt.Sprintf("Loading new bundle from %s", bundleFile))
+	fmt.Println(fmt.Sprintf("BundleManager: Loading new bundle from kernel:/%s", bundleFile))
 	reader, err := bundlefs.Open(bundleJson)
 	if err != nil {
 		return nil, errors.New(err)
@@ -133,13 +126,20 @@ func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs) (Bundle, erro
 		return nil, errors.New(err)
 	}
 
-	bundle, err := newBundle(bm.kernel, bundlefs, config.Id, config.Name)
+	bundle, err := newBundle(bm.kernel, path, bundlefs, config.Id, config.Name, config.Privileges)
 	if err != nil {
 		return nil, err
 	}
 
 	bundle.init(bm.kernel)
-	bm.kernel.loadScriptModule(config.Id, config.Name, config.Entrypoint, "/", bundle)
+
+	// make sure everything is nicely pretranspiled
+	// transpiler.transpileAll(bundle, "/")
+
+	_, err = bm.kernel.loadScriptModule(config.Id, config.Name, config.Entrypoint, "/", bundle)
+	if err != nil {
+		return nil, err
+	}
 
 	return bundle, nil
 }

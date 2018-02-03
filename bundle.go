@@ -12,11 +12,13 @@ type bundle struct {
 	kernel             *kernel
 	id                 string
 	name               string
+	basePath           string
 	filesystem         afero.Fs
 	status             BundleStatus
 	sandbox            *goja.Runtime
 	adapter            *securityProxy
 	exports            *goja.Object
+	privileges         []string
 	privileged         bool
 	modules            []*module
 	propertyDefiner    goja.Callable
@@ -25,13 +27,15 @@ type bundle struct {
 	loaderStack        []string
 }
 
-func newBundle(kernel *kernel, filesystem afero.Fs, id, name string) (*bundle, error) {
+func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name string, privileges []string) (*bundle, error) {
 	sandbox := goja.New()
 
 	bundle := &bundle{
 		kernel:      kernel,
 		id:          id,
 		name:        name,
+		privileges:  privileges,
+		basePath:    basePath,
 		filesystem:  filesystem,
 		sandbox:     sandbox,
 		exports:     sandbox.NewObject(),
@@ -134,11 +138,19 @@ func (b *bundle) Privileged() bool {
 	return b.privileged
 }
 
+func (b *bundle) Privileges() []string {
+	return b.privileges
+}
+
 func (b *bundle) SecurityInterceptor() SecurityInterceptor {
 	return func(caller Bundle, property string) (accessGranted bool) {
 		// TODO: Implement a real security check here! For now make it easy and get it running again
 		return true
 	}
+}
+
+func (b *bundle) getBasePath() string {
+	return b.basePath
 }
 
 func (b *bundle) getSandbox() *goja.Runtime {

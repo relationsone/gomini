@@ -87,6 +87,15 @@ func prepareJavascript(filename string, source string, bundle Bundle) (goja.Valu
 	}
 }
 
+func tsCacheFilename(path string, bundle Bundle, kernel *kernel) string {
+	kernelBasedPath := kernel.toKernelPath(path, bundle)
+	return hash(kernelBasedPath)
+}
+
+func isCachedFileCurrent(path string, bundle Bundle) bool {
+	return false
+}
+
 func executeJavascript(prog *goja.Program, bundle Bundle) (goja.Value, error) {
 	return bundle.getSandbox().RunProgram(prog)
 }

@@ -42,6 +42,7 @@ type Bundle interface {
 	ID() string
 	Name() string
 	Privileged() bool
+	Privileges() []string
 	SecurityInterceptor() SecurityInterceptor
 	Export(value goja.Value, target interface{}) error
 	Status() BundleStatus
@@ -67,6 +68,7 @@ type Bundle interface {
 	peekLoaderStack() string
 	popLoaderStack() string
 	pushLoaderStack(element string)
+	getBasePath() string
 }
 
 type Module interface {

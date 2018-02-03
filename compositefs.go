@@ -7,21 +7,25 @@ import (
 	"path/filepath"
 	"strings"
 	"errors"
+	"io"
+	"syscall"
 )
 
 const pathSeparator = "/"
 
 type CompositeFs struct {
-	base    afero.Fs
-	mounts  map[string]afero.Fs
-	parents map[string][]string
+	base         afero.Fs
+	mounts       map[string]afero.Fs
+	parents      map[string][]string
+	creationTime time.Time
 }
 
 func NewCompositeFs(base afero.Fs) *CompositeFs {
 	return &CompositeFs{
-		base:    base,
-		mounts:  make(map[string]afero.Fs),
-		parents: make(map[string][]string),
+		base:         base,
+		mounts:       make(map[string]afero.Fs),
+		parents:      make(map[string][]string),
+		creationTime: time.Now(),
 	}
 }
 
@@ -58,13 +62,37 @@ func (c *CompositeFs) MkdirAll(path string, perm os.FileMode) error {
 }
 
 func (c *CompositeFs) Open(name string) (afero.File, error) {
-	mount, innerPath := c.findMount(name)
-	return mount.Open(innerPath)
+	return c.OpenFile(name, os.O_RDONLY, os.ModePerm)
 }
 
 func (c *CompositeFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
 	mount, innerPath := c.findMount(name)
-	return mount.OpenFile(innerPath, flag, perm)
+
+	file, err := mount.OpenFile(innerPath, flag, perm)
+	if err != nil {
+		switch err.(type) {
+		case *os.PathError:
+			children := c.parents[name]
+			if children != nil {
+				return &compositeShadowFile{
+					fs:       c,
+					name:     filepath.Base(name),
+					path:     name,
+					children: children,
+				}, nil
+			}
+		}
+
+		return nil, err
+	}
+
+	return &compositeFile{
+		fs:        c,
+		file:      file,
+		path:      name,
+		mount:     mount,
+		innerPath: innerPath,
+	}, nil
 }
 
 func (c *CompositeFs) Remove(name string) error {
@@ -89,8 +117,11 @@ func (c *CompositeFs) Rename(oldname, newname string) error {
 }
 
 func (c *CompositeFs) Stat(name string) (os.FileInfo, error) {
-	mount, innerPath := c.findMount(name)
-	return mount.Stat(innerPath)
+	file, err := c.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return file.Stat()
 }
 
 func (c *CompositeFs) Name() string {
@@ -142,4 +173,262 @@ func (c *CompositeFs) splitPath(path string, sep string) []string {
 	parts := strings.Split(path, sep)
 
 	return parts
+}
+
+type compositeFile struct {
+	fs        *CompositeFs
+	file      afero.File
+	path      string
+	mount     afero.Fs
+	innerPath string
+}
+
+func (c *compositeFile) Close() error {
+	return c.file.Close()
+}
+
+func (c *compositeFile) Read(p []byte) (n int, err error) {
+	return c.file.Read(p)
+}
+
+func (c *compositeFile) ReadAt(p []byte, off int64) (n int, err error) {
+	return c.file.ReadAt(p, off)
+}
+
+func (c *compositeFile) Seek(offset int64, whence int) (int64, error) {
+	return c.file.Seek(offset, whence)
+}
+
+func (c *compositeFile) Write(p []byte) (n int, err error) {
+	return c.file.Write(p)
+}
+
+func (c *compositeFile) WriteAt(p []byte, off int64) (n int, err error) {
+	return c.file.WriteAt(p, off)
+}
+
+func (c *compositeFile) Name() string {
+	return c.path
+}
+
+func (c *compositeFile) Readdir(count int) ([]os.FileInfo, error) {
+	fileInfos, err := c.file.Readdir(count)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(fileInfos) == count {
+		return fileInfos, nil
+	}
+
+	for parent := range c.fs.parents {
+		if !strings.HasPrefix(parent, c.path) {
+			continue
+		}
+
+		child := strings.Replace(parent, c.path, "", -1)
+		if len(strings.Split(child, "/")) == 1 {
+			name := filepath.Join(c.path, child)
+			fileInfo, err := c.fs.Stat(name)
+			if err != nil {
+				return nil, err
+			}
+			fileInfos = append(fileInfos, fileInfo)
+
+			if len(fileInfos) == count {
+				return fileInfos, nil
+			}
+		}
+	}
+
+	if len(fileInfos) < count {
+		return fileInfos, io.EOF
+	}
+
+	return fileInfos, nil
+}
+
+func (c *compositeFile) Readdirnames(n int) ([]string, error) {
+	fileInfos, err := c.Readdir(n)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(fileInfos))
+	for i, fi := range fileInfos {
+		names[i] = fi.Name()
+	}
+	return names, nil
+}
+
+func (c *compositeFile) Stat() (os.FileInfo, error) {
+	fileInfo, err := c.file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	return &compositeFileInfo{
+		fileInfo: fileInfo,
+		name:     filepath.Base(c.path),
+	}, nil
+}
+
+func (c *compositeFile) Sync() error {
+	return c.file.Sync()
+}
+
+func (c *compositeFile) Truncate(size int64) error {
+	return c.file.Truncate(size)
+}
+
+func (c *compositeFile) WriteString(s string) (ret int, err error) {
+	return c.file.WriteString(s)
+}
+
+type compositeFileInfo struct {
+	fileInfo os.FileInfo
+	name     string
+}
+
+func (c *compositeFileInfo) Name() string {
+	return c.name
+}
+
+func (c *compositeFileInfo) Size() int64 {
+	return c.fileInfo.Size()
+}
+
+func (c *compositeFileInfo) Mode() os.FileMode {
+	return c.fileInfo.Mode()
+}
+
+func (c *compositeFileInfo) ModTime() time.Time {
+	return c.fileInfo.ModTime()
+}
+
+func (c *compositeFileInfo) IsDir() bool {
+	return c.fileInfo.IsDir()
+}
+
+func (c *compositeFileInfo) Sys() interface{} {
+	return nil
+}
+
+type compositeShadowFile struct {
+	fs       *CompositeFs
+	name     string
+	path     string
+	children []string
+}
+
+func (c *compositeShadowFile) Close() error {
+	return syscall.EPERM
+}
+
+func (c *compositeShadowFile) Read(p []byte) (n int, err error) {
+	return 0, syscall.EPERM
+}
+
+func (c *compositeShadowFile) ReadAt(p []byte, off int64) (n int, err error) {
+	return 0, syscall.EPERM
+}
+
+func (c *compositeShadowFile) Seek(offset int64, whence int) (int64, error) {
+	return 0, syscall.EPERM
+}
+
+func (c *compositeShadowFile) Write(p []byte) (n int, err error) {
+	return 0, syscall.EPERM
+}
+
+func (c *compositeShadowFile) WriteAt(p []byte, off int64) (n int, err error) {
+	return 0, syscall.EPERM
+}
+
+func (c *compositeShadowFile) Name() string {
+	return c.path
+}
+
+func (c *compositeShadowFile) Readdir(count int) ([]os.FileInfo, error) {
+	fileInfos := make([]os.FileInfo, 0)
+	for _, child := range c.children {
+		c, err := c.fs.Open(child)
+		if err != nil {
+			return nil, err
+		}
+
+		fileInfo, err := c.Stat()
+		if err != nil {
+			return nil, err
+		}
+		fileInfos = append(fileInfos, fileInfo)
+
+		if len(fileInfos) == count {
+			return fileInfos, nil
+		}
+	}
+
+	if len(fileInfos) < count {
+		return fileInfos, io.EOF
+	}
+
+	return fileInfos, nil
+}
+
+func (c *compositeShadowFile) Readdirnames(n int) ([]string, error) {
+	fileInfos, err := c.Readdir(n)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(fileInfos))
+	for i, fi := range fileInfos {
+		names[i] = fi.Name()
+	}
+	return names, nil
+}
+
+func (c *compositeShadowFile) Stat() (os.FileInfo, error) {
+	return &compositeShadowFileInfo{
+		name: c.name,
+		time: c.fs.creationTime,
+	}, nil
+}
+
+func (c *compositeShadowFile) Sync() error {
+	return syscall.EPERM
+}
+
+func (c *compositeShadowFile) Truncate(size int64) error {
+	return syscall.EPERM
+}
+
+func (c *compositeShadowFile) WriteString(s string) (ret int, err error) {
+	return 0, syscall.EPERM
+}
+
+type compositeShadowFileInfo struct {
+	name string
+	time time.Time
+}
+
+func (c *compositeShadowFileInfo) Name() string {
+	return c.name
+}
+
+func (c *compositeShadowFileInfo) Size() int64 {
+	return 0
+}
+
+func (c *compositeShadowFileInfo) Mode() os.FileMode {
+	return os.ModePerm
+}
+
+func (c *compositeShadowFileInfo) ModTime() time.Time {
+	return c.time
+}
+
+func (c *compositeShadowFileInfo) IsDir() bool {
+	return true
+}
+
+func (c *compositeShadowFileInfo) Sys() interface{} {
+	return nil
 }
