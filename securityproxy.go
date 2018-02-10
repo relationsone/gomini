@@ -29,7 +29,7 @@ type securityProxy struct {
 }
 
 func newSecurityProxy(kernel *kernel, bundle Bundle) (*securityProxy, error) {
-	filename := kernel.findScriptFile(kernel, "/js/kernel/securityProxy.js")
+	filename := kernel.resolveScriptPath(kernel, "/js/kernel/securityProxy.js")
 	prog, err := kernel.loadScriptSource(bundle, filename, true)
 	if err != nil {
 		return nil, errors.New(err)
@@ -50,6 +50,61 @@ func newSecurityProxy(kernel *kernel, bundle Bundle) (*securityProxy, error) {
 		vm:           bundle.getSandbox(),
 		adaptingCall: adaptingCall,
 	}, nil
+}
+
+func (s *securityProxy) makeProxy(target *goja.Object, origin, caller Bundle) (goja.Value, error) {
+	handler := &goja.ProxyTrapConfig{
+		GetPrototypeOf: func(target *goja.Object) *goja.Object {
+			return caller.getSandbox().NewTypeError("Proxies have no prototypes")
+		},
+		IsExtensible: func(target *goja.Object) bool {
+			return false
+		},
+		DefineProperty: func(target *goja.Object, key string, propertyDescriptor goja.PropertyDescriptor) bool {
+			return false
+		},
+		DeleteProperty: func(target *goja.Object, property string) bool {
+			return false
+		},
+		PreventExtensions: func(target *goja.Object) bool {
+			return true
+		},
+		Set: func(target *goja.Object, property string, value goja.Value, receiver *goja.Object) bool {
+			return false
+		},
+		GetOwnPropertyDescriptor: func(target *goja.Object, prop string) goja.PropertyDescriptor {
+			return goja.PropertyDescriptor{
+				Writable:     goja.FLAG_FALSE,
+				Configurable: goja.FLAG_FALSE,
+				Enumerable:   goja.FLAG_TRUE,
+				Value:        nil,
+				Setter:       nil,
+				Getter: caller.ToValue(func() goja.Value {
+					return nil
+				}),
+			}
+		},
+		Get: func(target *goja.Object, property string, receiver *goja.Object) goja.Value {
+			source := target.Get(property)
+			if o, ok := source.(*goja.Object); ok {
+				proxy, err := s.makeProxy(o, origin, caller)
+				if err != nil {
+					panic(err)
+				}
+				return proxy
+			}
+			return source
+		},
+		Has: func(target *goja.Object, property string) bool {
+			return target.Get(property) != nil
+		},
+		OwnKeys: func(target *goja.Object) *goja.Object {
+			return caller.ToValue(target.Keys()).(*goja.Object)
+		},
+	}
+
+	proxy := caller.getSandbox().NewProxy(target, handler, false, false)
+	return caller.ToValue(proxy), nil
 }
 
 func (s *securityProxy) adapt(source, target *goja.Object, origin Bundle, caller Bundle) error {
@@ -164,7 +219,7 @@ func (s *securityProxy) sandboxSecurityCheck(property string, origin Bundle, cal
 	interceptor := origin.SecurityInterceptor()
 	if !caller.Privileged() && interceptor != nil {
 		if !interceptor(caller, property) {
-			msg := fmt.Sprintf("Illegal access violation: %s cannot access %s::%s",
+			msg := fmt.Sprintf("SecurityProxy: Illegal access violation: %s cannot access %s::%s",
 				caller.Name(), origin.Name(), property)
 			panic(errors.New(msg))
 		}
