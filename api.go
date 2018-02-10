@@ -106,14 +106,6 @@ type ObjectBuilder interface {
 	EndObject()
 }
 
-type ScriptExtension interface {
-	ID() string
-	Name() string
-	ScriptFile() string
-	ExtensionBinder() ExtensionBinder
-	SecurityInterceptor() SecurityInterceptor
-}
-
 type ExportAdapter interface {
 	Get(property string) interface{}
 }
