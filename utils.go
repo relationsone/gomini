@@ -71,7 +71,7 @@ func hash(value string) string {
 }
 
 func loadPlainJavascript(kernel *kernel, filename string, bundle Bundle) (goja.Value, error) {
-	filename = kernel.findScriptFile(bundle, filename)
+	filename = kernel.resolveScriptPath(bundle, filename)
 	if prog, err := kernel.loadScriptSource(bundle, filename, true); err != nil {
 		return nil, err
 	} else {

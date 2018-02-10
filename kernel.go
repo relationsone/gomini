@@ -88,7 +88,7 @@ func (k *kernel) SecurityInterceptor() SecurityInterceptor {
 }
 
 func (k *kernel) LoadKernelModule(kernelModule KernelModuleDefinition) error {
-	filename := k.findScriptFile(k, kernelModule.ApiDefinitionFile())
+	filename := k.resolveScriptPath(k, kernelModule.ApiDefinitionFile())
 
 	origin := newOrigin(filename)
 	module, err := newModule(kernelModule.ID(), kernelModule.Name(), origin, k)
@@ -210,6 +210,11 @@ func (k *kernel) loadContent(bundle Bundle, filesystem afero.Fs, filename string
 func (k *kernel) loadScriptModule(id, name, filename, parentPath string, bundle *bundle) (Module, error) {
 	loadingBundle := bundle
 
+	if filename[0] != '/' {
+		return nil, errors.New("only absolute path is supported")
+	}
+
+	// TODO --------
 	if !strings.HasPrefix(filename, "./") &&
 		!strings.HasPrefix(filename, "../") &&
 		!strings.HasPrefix(filename, "/") {
@@ -220,8 +225,9 @@ func (k *kernel) loadScriptModule(id, name, filename, parentPath string, bundle 
 
 	if !filepath.IsAbs(filename) {
 		filename = filepath.Join(parentPath, filename)
-		filename = k.findScriptFile(bundle, filename)
+		filename = k.resolveScriptPath(bundle, filename)
 	}
+	// TODO --------
 
 	prog, err := k.loadScriptSource(loadingBundle, filename, true)
 	if err != nil {
@@ -267,7 +273,7 @@ func (k *kernel) kernelRegisterModule(module *module, dependencies []string, cal
 
 	dependentModules := make([]Module, len(dependencies))
 	for i, filename := range dependencies {
-		moduleFile := k.findScriptFile(bundle, filename)
+		moduleFile := k.resolveScriptPath(bundle, filename)
 
 		vfs, file, err := k.toVirtualKernelFile(moduleFile, bundle)
 		if err != nil {
@@ -290,7 +296,7 @@ func (k *kernel) kernelRegisterModule(module *module, dependencies []string, cal
 			}
 
 			moduleId := id.String()
-			m, err := k.loadScriptModule(moduleId, filename, filename, module.origin.Path(), bundle)
+			m, err := k.loadScriptModule(moduleId, filename, moduleFile, module.origin.Path(), bundle)
 			if err != nil {
 				panic(err)
 			}
@@ -353,12 +359,10 @@ func (k *kernel) adaptBundleObject(source *goja.Object, target *goja.Object, ori
 }
 
 func (k *kernel) loadScriptSource(bundle Bundle, filename string, allowCaching bool) (*goja.Program, error) {
-	/* TODO if !strings.HasPrefix(filename, "system::") && !filepath.IsAbs(filename) {
-		return nil, fmt.Errorf("provided path is not absolute: %s", filename)
-	}*/
-
 	var prog *goja.Program
 	if allowCaching {
+		// TODO Fix to use kernel namespaced filename (to prevent apps to load known kernel files)
+		fmt.Println(fmt.Sprintf("Kernel: Reusing preloaded bytecode for %s:/%s", bundle.Name(), filename))
 		prog = k.scriptCache[filename]
 	}
 
@@ -414,8 +418,10 @@ func (k *kernel) toKernelPath(path string, bundle Bundle) string {
 	return filepath.Join(basePath, path)
 }
 
-func (k *kernel) findScriptFile(bundle Bundle, filename string) string {
+func (k *kernel) resolveScriptPath(bundle Bundle, filename string) string {
 	filesystem := bundle.Filesystem()
+
+	originalFilename := filename
 
 	// Is non-relative and non-absolute? Non-relative paths are assumed to be an exported module
 	if !strings.HasPrefix(filename, "./") &&
@@ -425,8 +431,16 @@ func (k *kernel) findScriptFile(bundle Bundle, filename string) string {
 		filename = filepath.Join("/kernel/@types", filename)
 	}
 
+	parent := "/"
+	if bundle.peekLoaderStack() != "" {
+		parentUuid := bundle.peekLoaderStack()
+		parentModule := bundle.findModuleById(parentUuid)
+		parent = parentModule.origin.Path()
+	}
+
 	// Clean path (removes ../ and ./)
 	filename = filepath.Clean(filename)
+	filename = filepath.Join(parent, filename)
 
 	// See if we already have an extension
 	if ext := filepath.Ext(filename); ext != "" {
@@ -471,5 +485,26 @@ func (k *kernel) findScriptFile(bundle Bundle, filename string) string {
 	if fileExists(filesystem, candidate) {
 		return candidate
 	}
+
+	if !strings.HasPrefix(originalFilename, "./") &&
+		!strings.HasPrefix(originalFilename, "../") &&
+		!strings.HasPrefix(originalFilename, "/") {
+
+		parent := k.peekLoaderStack()
+		if parent == "" {
+			parent = "/"
+		}
+
+		localImport := filepath.Join(parent, originalFilename+".d.ts")
+		if fileExists(filesystem, localImport) {
+			return localImport
+		}
+	}
+
 	return filename
+}
+
+type resolvedScriptPath struct {
+	path   string
+	loader Bundle
 }

@@ -175,7 +175,7 @@ func (t *transpiler) transpileAll(bundle Bundle, root string) error {
 }
 
 func (t *transpiler) loadScript(bundle Bundle, filename string) (goja.Value, error) {
-	scriptFile := t.kernel.findScriptFile(t.kernel, filename)
+	scriptFile := t.kernel.resolveScriptPath(t.kernel, filename)
 	scriptFile, err := filepath.Abs(scriptFile)
 	if err != nil {
 		return nil, err
