@@ -207,8 +207,10 @@ func (b *bundle) popLoaderStack() string {
 	if len(b.loaderStack) == 0 {
 		return ""
 	}
-	element := b.loaderStack[len(b.loaderStack)-1]
-	b.loaderStack = b.loaderStack[:len(b.loaderStack)-1]
+	index := len(b.loaderStack) - 1
+	element := b.loaderStack[index]
+	b.loaderStack[index] = ""
+	b.loaderStack = b.loaderStack[:index]
 	return element
 }
 

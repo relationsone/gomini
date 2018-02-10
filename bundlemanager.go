@@ -133,9 +133,6 @@ func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs, transpiler *t
 
 	bundle.init(bm.kernel)
 
-	// make sure everything is nicely pretranspiled
-	// transpiler.transpileAll(bundle, "/")
-
 	_, err = bm.kernel.loadScriptModule(config.Id, config.Name, config.Entrypoint, "/", bundle)
 	if err != nil {
 		return nil, err
