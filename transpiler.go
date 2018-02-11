@@ -9,6 +9,7 @@ import (
 	"github.com/go-errors/errors"
 	"fmt"
 	"github.com/spf13/afero"
+	"github.com/apex/log"
 )
 
 const cacheJsonFile = "cache.json"
@@ -42,7 +43,7 @@ func newTranspiler(kernel *kernel) (*transpiler, error) {
 
 func (t *transpiler) initialize() {
 	if t.runtime == nil {
-		fmt.Println("Transpiler: Setting up typescript transpiler...")
+		log.Info("Transpiler: Setting up typescript transpiler...")
 
 		t.runtime = goja.New()
 		if _, err := t.loadScript(t.kernel, "/js/typescript"); err != nil {
@@ -77,7 +78,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 
 	isCached := fileExists(t.kernel.Filesystem(), cacheFile)
 	if isCached && module != nil && module.Checksum == checksum {
-		fmt.Println(fmt.Sprintf("Transpiler: Already transpiled %s:/%s as kernel:/%s...", bundle.Name(), path, cacheFile))
+		log.Infof("Transpiler: Already transpiled %s:/%s as kernel:/%s...", bundle.Name(), path, cacheFile)
 		f, err := t.kernel.Filesystem().Open(cacheFile)
 		if err != nil {
 			return nil, err
@@ -91,7 +92,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 	}
 
 	if isCached {
-		fmt.Println(fmt.Sprintf("Transpiler: Cache is out of date for %s:/%s as kernel:/%s...", bundle.Name(), path, cacheFile))
+		log.Infof("Transpiler: Cache is out of date for %s:/%s as kernel:/%s...", bundle.Name(), path, cacheFile)
 	}
 
 	// Module exists but either cache file is missing or checksum doesn't match anymore
@@ -101,7 +102,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 	// Remove old module definition
 	t.removeTranspiledModule(module)
 
-	fmt.Println(fmt.Sprintf("Transpiler: Transpiling %s:/%s to kernel:/%s...", bundle.Name(), path, cacheFile))
+	log.Infof("Transpiler: Transpiling %s:/%s to kernel:/%s...", bundle.Name(), path, cacheFile)
 
 	if source, err := t._transpileSource(code); err != nil {
 		return nil, err
@@ -176,17 +177,22 @@ func (t *transpiler) transpileAll(bundle Bundle, root string) error {
 
 func (t *transpiler) loadScript(bundle Bundle, filename string) (goja.Value, error) {
 	scriptFile := t.kernel.resolveScriptPath(t.kernel, filename)
-	scriptFile, err := filepath.Abs(scriptFile)
+
+	// TODO Test that the resolved path is already absolute but it should be
+	/*filename, err := filepath.Abs(scriptFile.path)
 	if err != nil {
 		return nil, err
-	}
-	source, err := t.kernel.loadContent(bundle, bundle.Filesystem(), scriptFile)
+	}*/
+
+	loaderFilename := fmt.Sprintf("%s:/%s", scriptFile.loader, scriptFile.path)
+
+	source, err := t.kernel.loadContent(bundle, scriptFile.loader.Filesystem(), scriptFile.path)
 	if err != nil {
 		return nil, err
 
 	}
 
-	prog, err := compileJavascript(scriptFile, string(source))
+	prog, err := compileJavascript(loaderFilename, string(source))
 	if err != nil {
 		return nil, err
 	}

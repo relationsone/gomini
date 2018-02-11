@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"os"
 	"strings"
-	"fmt"
 	"crypto/sha256"
 	"encoding/hex"
 	"path/filepath"
@@ -70,12 +69,12 @@ func hash(value string) string {
 	return hex.EncodeToString(sum)
 }
 
-func loadPlainJavascript(kernel *kernel, filename string, bundle Bundle) (goja.Value, error) {
-	filename = kernel.resolveScriptPath(bundle, filename)
-	if prog, err := kernel.loadScriptSource(bundle, filename, true); err != nil {
+func loadPlainJavascript(kernel *kernel, filename string, loader, target Bundle) (goja.Value, error) {
+	scriptPath := kernel.resolveScriptPath(loader, filename)
+	if prog, err := kernel.loadScriptSource(scriptPath, true); err != nil {
 		return nil, err
 	} else {
-		return executeJavascript(prog, bundle)
+		return executeJavascript(prog, target)
 	}
 }
 
@@ -101,9 +100,10 @@ func executeJavascript(prog *goja.Program, bundle Bundle) (goja.Value, error) {
 }
 
 func compileJavascript(filename string, source string) (*goja.Program, error) {
-	if !strings.HasPrefix(filename, "system::") && !filepath.IsAbs(filename) {
+	// TODO Is this still necessary?
+	/*if !strings.HasPrefix(filename, "system::") && !filepath.IsAbs(filename) {
 		return nil, fmt.Errorf("provided path is not absolute: %s", filename)
-	}
+	}*/
 	ast, err := parser.ParseFile(nil, filename, source, 0)
 	if err != nil {
 		return nil, err

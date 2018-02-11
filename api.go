@@ -24,6 +24,7 @@ type KernelModuleDefinition interface {
 type Origin interface {
 	Filename() string
 	Path() string
+	FullPath() string
 }
 
 type BundleStatus int

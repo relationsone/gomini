@@ -2,7 +2,6 @@ package gomini
 
 import (
 	"github.com/dop251/goja"
-	"fmt"
 	"path/filepath"
 	"os"
 	"github.com/go-errors/errors"
@@ -10,6 +9,7 @@ import (
 	"encoding/json"
 	"github.com/spf13/afero"
 	"github.com/relationsone/bacc"
+	"github.com/apex/log"
 )
 
 const (
@@ -42,29 +42,58 @@ func (bm *bundleManager) start() error {
 		if path == appsPath {
 			return nil
 		}
+
+		bundle, err := bm.tryLoadBundle(path, info, transpiler)
+
+		if err != nil {
+			if err != filepath.SkipDir {
+				log.Warnf("BundleManager: Loading bundle from path %s failed: %s", path, err.Error())
+				return nil
+			}
+			return err
+		}
+
+		if bundle == nil {
+			return nil
+		}
+
+		log.Infof("BundleManager: Loaded bundle %s (%s)", bundle.Name(), bundle.ID())
+
 		if info != nil {
-			filesystem, err := bm.createBundleFilesystem(path, info)
-			if err == errNoSuchBundle {
-				if info.IsDir() {
-					return filepath.SkipDir
-				} else {
-					return nil
-				}
-			}
-			if err != nil {
-				return err
-			}
-
-			bundle, err := bm.newBundle(path, filesystem, transpiler)
-			if err != nil {
-				return err
-			}
-
-			fmt.Println(fmt.Sprintf("BundleManager: Loaded bundle %s (%s)", bundle.Name(), bundle.ID()))
 			return filepath.SkipDir
 		}
 		return nil
 	})
+}
+
+func (bm *bundleManager) tryLoadBundle(path string, info os.FileInfo, transpiler *transpiler) (bundle Bundle, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = errors.New(r)
+			}
+		}
+	}()
+
+	return bm.loadBundle(path, info, transpiler)
+}
+
+func (bm *bundleManager) loadBundle(path string, info os.FileInfo, transpiler *transpiler) (Bundle, error) {
+	filesystem, err := bm.createBundleFilesystem(path, info)
+	if err == errNoSuchBundle {
+		if info.IsDir() {
+			return nil, filepath.SkipDir
+		} else {
+			return nil, nil
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return bm.newBundle(path, filesystem, transpiler)
 }
 
 func (bm *bundleManager) createBundleFilesystem(path string, info os.FileInfo) (*CompositeFs, error) {
@@ -109,7 +138,7 @@ func (bm *bundleManager) createBundleFilesystem(path string, info os.FileInfo) (
 
 func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs, transpiler *transpiler) (Bundle, error) {
 	bundleFile := filepath.Join(path, bundleJson)
-	fmt.Println(fmt.Sprintf("BundleManager: Loading new bundle from kernel:/%s", bundleFile))
+	log.Infof("BundleManager: Loading new bundle from kernel:/%s", bundleFile)
 	reader, err := bundlefs.Open(bundleJson)
 	if err != nil {
 		return nil, errors.New(err)
@@ -133,7 +162,7 @@ func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs, transpiler *t
 
 	bundle.init(bm.kernel)
 
-	_, err = bm.kernel.loadScriptModule(config.Id, config.Name, config.Entrypoint, "/", bundle)
+	_, err = bm.kernel.loadScriptModule(config.Id, config.Name, "/", &resolvedScriptPath{config.Entrypoint, bundle}, bundle)
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +173,10 @@ func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs, transpiler *t
 func (bm *bundleManager) registerDefaults(bundle Bundle) error {
 	console := bundle.getSandbox().NewObject()
 	if err := console.Set("log", func(msg string) {
-		fmt.Println(msg)
-
+		stackFrames := bundle.getSandbox().CaptureCallStack(2)
+		frame := stackFrames[1]
+		pos := frame.Position()
+		log.Infof("%s[%d:%d]: %s", frame.SrcName(), pos.Line, pos.Col, msg)
 	}); err != nil {
 		return err
 	}
@@ -155,11 +186,11 @@ func (bm *bundleManager) registerDefaults(bundle Bundle) error {
 		return goja.Null()
 	})
 
-	if _, err := loadPlainJavascript(bm.kernel, jsPromise, bundle); err != nil {
+	if _, err := loadPlainJavascript(bm.kernel, jsPromise, bm.kernel, bundle); err != nil {
 		return err
 	}
 
-	if _, err := loadPlainJavascript(bm.kernel, jsSystem, bundle); err != nil {
+	if _, err := loadPlainJavascript(bm.kernel, jsSystem, bm.kernel, bundle); err != nil {
 		return err
 	}
 

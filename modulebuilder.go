@@ -3,8 +3,8 @@ package gomini
 import (
 	"path/filepath"
 	"github.com/dop251/goja"
-	"fmt"
 	"reflect"
+	"github.com/apex/log"
 )
 
 type moduleBuilder struct {
@@ -153,39 +153,67 @@ func (mb *moduleBuilder) defineModule() {
 	})
 
 	if mb.kernel.kernelDebugging {
-		fmt.Println(fmt.Sprintf("ModuleBuilder: Registered builtin module: %s (%s) with %s", mb.moduleName, mb.module.ID(), filename))
+		log.Infof("ModuleBuilder: Registered builtin module: %s (%s) with %s", mb.moduleName, mb.module.ID(), filename)
 	}
 }
 
 func (mb *moduleBuilder) defineFunctions(parent *goja.Object, definitions []*scriptFunctionDefinition) {
 	for _, function := range definitions {
-		parent.Set(function.functionName, function.function)
+		value := mb.module.Bundle().ToValue(function.function)
+		parent.DefineDataProperty(function.functionName, value, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 	}
 }
 
 func (mb *moduleBuilder) defineProperties(parent *goja.Object, definitions []*scriptPropertyDefinition) {
+	sandbox := mb.module.Bundle().getSandbox()
 	for _, property := range definitions {
-		mb.module.Bundle().DefineProperty(parent, property.propertyName, property.value, property.getter, property.setter)
+		name := property.propertyName
+		if property.getter == nil && property.setter == nil {
+			v := property.value
+			x := reflect.ValueOf(v)
+			switch x.Kind() {
+			case reflect.String:
+				v = x.String()
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				v = x.Int()
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				v = x.Uint()
+			case reflect.Float32, reflect.Float64:
+				v = x.Float()
+			case reflect.Bool:
+				v = x.Bool()
+			}
+
+			value := sandbox.ToValue(v)
+			parent.DefineDataProperty(name, value, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
+		} else {
+			getter := sandbox.ToValue(property.getter)
+			setter := sandbox.ToValue(property.setter)
+			parent.DefineAccessorProperty(name, getter, setter, goja.FLAG_FALSE, goja.FLAG_TRUE)
+		}
 	}
 }
 
 func (mb *moduleBuilder) defineConstants(parent *goja.Object, definitions []*scriptConstantDefinition) {
 	for _, constant := range definitions {
-		value := constant.value
-		x := reflect.ValueOf(value)
+		v := constant.value
+		x := reflect.ValueOf(v)
 		switch x.Kind() {
 		case reflect.String:
-			value = x.String()
+			v = x.String()
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			value = x.Int()
+			v = x.Int()
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			value = x.Uint()
+			v = x.Uint()
 		case reflect.Float32, reflect.Float64:
-			value = x.Float()
+			v = x.Float()
 		case reflect.Bool:
-			value = x.Bool()
+			v = x.Bool()
 		}
-		mb.module.Bundle().DefineConstant(parent, constant.constantName, value)
+
+		name := constant.constantName
+		value := mb.module.Bundle().ToValue(v)
+		parent.DefineDataProperty(name, value, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 	}
 }
 
@@ -203,7 +231,7 @@ func (mb *moduleBuilder) defineObject(parent *goja.Object, definition *scriptObj
 	mb.defineConstants(object, definition.constants)
 	mb.defineObjects(object, definition.objects)
 
-	parent.Set(definition.objectName, object)
+	parent.DefineDataProperty(definition.objectName, object, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 }
 
 type scriptModuleDefinition struct {
