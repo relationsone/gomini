@@ -10,15 +10,16 @@ type Setter func(value interface{})
 
 type SecurityInterceptor func(caller Bundle, property string) (accessGranted bool)
 
-type ExtensionBinder func(bundle Bundle, moduleBuilder ModuleBuilder)
-type ObjectBinder func(objectBuilder ObjectBuilder)
+type KernelModuleBinder func(bundle Bundle, builder ApiBuilder)
+type ApiProviderBinder func(kernel Bundle, bundle Bundle, builder ApiBuilder)
+type ObjectBinder func(builder ObjectBuilder)
 
 type KernelModuleDefinition interface {
 	ID() string
 	Name() string
 	ApiDefinitionFile() string
 	SecurityInterceptor() SecurityInterceptor
-	ExtensionBinder() ExtensionBinder
+	KernelModuleBinder() KernelModuleBinder
 }
 
 type Origin interface {
@@ -83,16 +84,16 @@ type Module interface {
 	setName(name string)
 }
 
-type ModuleBuilder interface {
-	DefineObject(objectName string, objectBinder ObjectBinder) ModuleBuilder
-	DefineFunction(functionName string, function interface{}) ModuleBuilder
+type ApiBuilder interface {
+	DefineObject(objectName string, objectBinder ObjectBinder) ApiBuilder
+	DefineFunction(functionName string, function interface{}) ApiBuilder
 	DefineProperty(
 		propertyName string,
 		value interface{},
 		getter func() interface{},
-		setter func(value interface{})) ModuleBuilder
-	DefineConstant(constantName string, value interface{}) ModuleBuilder
-	EndModule()
+		setter func(value interface{})) ApiBuilder
+	DefineConstant(constantName string, value interface{}) ApiBuilder
+	EndApi()
 }
 
 type ObjectBuilder interface {

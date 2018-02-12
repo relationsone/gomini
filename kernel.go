@@ -27,23 +27,23 @@ type registerCallback func(export registerExport, context *goja.Object) *goja.Ob
  */
 type kernel struct {
 	*bundle
-	osfs            afero.Fs
-	bundleManager   *bundleManager
-	keyManager      bacc.KeyManager
-	kernelDebugging bool
-	resourceLoader  ResourceLoader
-	scriptCache     map[string]*goja.Program
+	osfs           afero.Fs
+	bundleManager  *bundleManager
+	keyManager     bacc.KeyManager
+	resourceLoader ResourceLoader
+	scriptCache    map[string]*goja.Program
 }
 
-func NewScriptKernel(osfs, bundlefs afero.Fs, kernelDebugging bool) (*kernel, error) {
+func NewScriptKernel(osfs, bundlefs afero.Fs, apiBinders []ApiProviderBinder) (*kernel, error) {
 	kernel := &kernel{
-		osfs:            osfs,
-		kernelDebugging: kernelDebugging,
-		resourceLoader:  newResourceLoader(),
-		scriptCache:     make(map[string]*goja.Program),
+		osfs:           osfs,
+		resourceLoader: newResourceLoader(),
+		scriptCache:    make(map[string]*goja.Program),
 	}
 
-	kernel.bundleManager = newBundleManager(kernel)
+	apiBinders = append(apiBinders, consoleApi(), timeoutApi())
+
+	kernel.bundleManager = newBundleManager(kernel, apiBinders)
 	bundle, err := newBundle(kernel, "/", bundlefs, kernel_id, "kernel", []string{})
 	if err != nil {
 		return nil, err
@@ -99,9 +99,9 @@ func (k *kernel) LoadKernelModule(kernelModule KernelModuleDefinition) error {
 	module.kernel = true
 	k.addModule(module)
 
-	moduleBuilder := newModuleBuilder(module, k)
-	binder := kernelModule.ExtensionBinder()
-	binder(k, moduleBuilder)
+	builder := newApiBuilder(module, k, k)
+	binder := kernelModule.KernelModuleBinder()
+	binder(k, builder)
 
 	return nil
 }
@@ -139,9 +139,7 @@ func (k *kernel) loadSource(bundle Bundle, filename string) (string, error) {
 		// Is pre-transpiled?
 		cacheFilename := filepath.Join(cacheVfsPath, tsCacheFilename(filename, bundle, k))
 		if !fileExists(k.Filesystem(), cacheFilename) {
-			if k.kernelDebugging {
-				log.Infof("Kernel: Loading scriptfile '%s:/%s' with live transpiler", bundle.Name(), filename)
-			}
+			log.Infof("Kernel: Loading scriptfile '%s:/%s' with live transpiler", bundle.Name(), filename)
 
 			source, err := k.transpile(bundle, filename)
 			if err != nil {

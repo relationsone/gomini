@@ -7,24 +7,32 @@ import (
 	"github.com/apex/log"
 )
 
-type moduleBuilder struct {
+type apiBuilder struct {
 	module Module
+	bundle Bundle
 	kernel *kernel
 	*scriptModuleDefinition
 }
 
 type objectBuilder struct {
 	module Module
+	bundle Bundle
 	kernel *kernel
 	*scriptObjectDefinition
 }
 
-func newModuleBuilder(module Module, kernel *kernel) ModuleBuilder {
-	return &moduleBuilder{
+func newApiBuilder(module Module, bundle Bundle, kernel *kernel) ApiBuilder {
+	name := ""
+	if module != nil {
+		name = module.Name()
+	}
+
+	return &apiBuilder{
 		module,
+		bundle,
 		kernel,
 		&scriptModuleDefinition{
-			module.Name(),
+			name,
 			make([]*scriptObjectDefinition, 0),
 			make([]*scriptFunctionDefinition, 0),
 			make([]*scriptPropertyDefinition, 0),
@@ -33,7 +41,7 @@ func newModuleBuilder(module Module, kernel *kernel) ModuleBuilder {
 	}
 }
 
-func (mb *moduleBuilder) DefineObject(objectName string, objectBinder ObjectBinder) ModuleBuilder {
+func (ab *apiBuilder) DefineObject(objectName string, objectBinder ObjectBinder) ApiBuilder {
 	definition := &scriptObjectDefinition{
 		objectName,
 		make([]*scriptObjectDefinition, 0),
@@ -43,49 +51,50 @@ func (mb *moduleBuilder) DefineObject(objectName string, objectBinder ObjectBind
 	}
 
 	objectBuilder := &objectBuilder{
-		mb.module,
-		mb.kernel,
+		ab.module,
+		ab.bundle,
+		ab.kernel,
 		definition,
 	}
 	objectBinder(objectBuilder)
 
-	mb.objects = append(mb.objects, definition)
-	return mb
+	ab.objects = append(ab.objects, definition)
+	return ab
 }
 
-func (mb *moduleBuilder) DefineFunction(functionName string, function interface{}) ModuleBuilder {
-	mb.functions = append(mb.functions, &scriptFunctionDefinition{
+func (ab *apiBuilder) DefineFunction(functionName string, function interface{}) ApiBuilder {
+	ab.functions = append(ab.functions, &scriptFunctionDefinition{
 		functionName,
 		function,
 	})
-	return mb
+	return ab
 }
 
-func (mb *moduleBuilder) DefineProperty(
+func (ab *apiBuilder) DefineProperty(
 	propertyName string,
 	value interface{},
 	getter func() interface{},
-	setter func(value interface{})) ModuleBuilder {
+	setter func(value interface{})) ApiBuilder {
 
-	mb.properties = append(mb.properties, &scriptPropertyDefinition{
+	ab.properties = append(ab.properties, &scriptPropertyDefinition{
 		propertyName,
 		value,
 		getter,
 		setter,
 	})
-	return mb
+	return ab
 }
 
-func (mb *moduleBuilder) DefineConstant(constantName string, value interface{}) ModuleBuilder {
-	mb.constants = append(mb.constants, &scriptConstantDefinition{
+func (ab *apiBuilder) DefineConstant(constantName string, value interface{}) ApiBuilder {
+	ab.constants = append(ab.constants, &scriptConstantDefinition{
 		constantName,
 		value,
 	})
-	return mb
+	return ab
 }
 
-func (mb *moduleBuilder) EndModule() {
-	mb.defineModule()
+func (ab *apiBuilder) EndApi() {
+	ab.defineModule()
 }
 
 func (obi *objectBuilder) DefineObject(objectName string, objectBinder ObjectBinder) ObjectBuilder {
@@ -99,6 +108,7 @@ func (obi *objectBuilder) DefineObject(objectName string, objectBinder ObjectBin
 
 	objectBuilder := &objectBuilder{
 		obi.module,
+		obi.bundle,
 		obi.kernel,
 		definition,
 	}
@@ -142,30 +152,36 @@ func (obi *objectBuilder) DefineConstant(constantName string, value interface{})
 func (*objectBuilder) EndObject() {
 }
 
-func (mb *moduleBuilder) defineModule() {
-	filename := filepath.Join(mb.module.Origin().Path(), mb.module.Origin().Filename())
+func (ab *apiBuilder) defineModule() {
+	if ab.module != nil {
+		filename := filepath.Join(ab.module.Origin().Path(), ab.module.Origin().Filename())
 
-	mb.kernel.defineKernelModule(mb.module, filename, func(exports *goja.Object) {
-		mb.defineFunctions(exports, mb.functions)
-		mb.defineProperties(exports, mb.properties)
-		mb.defineConstants(exports, mb.constants)
-		mb.defineObjects(exports, mb.objects)
-	})
+		ab.kernel.defineKernelModule(ab.module, filename, func(exports *goja.Object) {
+			ab.defineFunctions(exports, ab.functions)
+			ab.defineProperties(exports, ab.properties)
+			ab.defineConstants(exports, ab.constants)
+			ab.defineObjects(exports, ab.objects)
+		})
 
-	if mb.kernel.kernelDebugging {
-		log.Infof("ModuleBuilder: Registered builtin module: %s (%s) with %s", mb.moduleName, mb.module.ID(), filename)
+		log.Infof("ApiBuilder: Registered builtin module: %s (%s) with %s", ab.moduleName, ab.module.ID(), filename)
+	} else {
+		global := ab.bundle.getSandbox().GlobalObject()
+		ab.defineFunctions(global, ab.functions)
+		ab.defineProperties(global, ab.properties)
+		ab.defineConstants(global, ab.constants)
+		ab.defineObjects(global, ab.objects)
 	}
 }
 
-func (mb *moduleBuilder) defineFunctions(parent *goja.Object, definitions []*scriptFunctionDefinition) {
+func (ab *apiBuilder) defineFunctions(parent *goja.Object, definitions []*scriptFunctionDefinition) {
 	for _, function := range definitions {
-		value := mb.module.Bundle().ToValue(function.function)
+		value := ab.bundle.ToValue(function.function)
 		parent.DefineDataProperty(function.functionName, value, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 	}
 }
 
-func (mb *moduleBuilder) defineProperties(parent *goja.Object, definitions []*scriptPropertyDefinition) {
-	sandbox := mb.module.Bundle().getSandbox()
+func (ab *apiBuilder) defineProperties(parent *goja.Object, definitions []*scriptPropertyDefinition) {
+	sandbox := ab.bundle.getSandbox()
 	for _, property := range definitions {
 		name := property.propertyName
 		if property.getter == nil && property.setter == nil {
@@ -194,7 +210,7 @@ func (mb *moduleBuilder) defineProperties(parent *goja.Object, definitions []*sc
 	}
 }
 
-func (mb *moduleBuilder) defineConstants(parent *goja.Object, definitions []*scriptConstantDefinition) {
+func (ab *apiBuilder) defineConstants(parent *goja.Object, definitions []*scriptConstantDefinition) {
 	for _, constant := range definitions {
 		v := constant.value
 		x := reflect.ValueOf(v)
@@ -212,24 +228,24 @@ func (mb *moduleBuilder) defineConstants(parent *goja.Object, definitions []*scr
 		}
 
 		name := constant.constantName
-		value := mb.module.Bundle().ToValue(v)
+		value := ab.bundle.ToValue(v)
 		parent.DefineDataProperty(name, value, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 	}
 }
 
-func (mb *moduleBuilder) defineObjects(parent *goja.Object, definitions []*scriptObjectDefinition) {
+func (ab *apiBuilder) defineObjects(parent *goja.Object, definitions []*scriptObjectDefinition) {
 	for _, object := range definitions {
-		mb.defineObject(parent, object)
+		ab.defineObject(parent, object)
 	}
 }
 
-func (mb *moduleBuilder) defineObject(parent *goja.Object, definition *scriptObjectDefinition) {
-	object := mb.module.Bundle().NewObject()
+func (ab *apiBuilder) defineObject(parent *goja.Object, definition *scriptObjectDefinition) {
+	object := ab.bundle.NewObject()
 
-	mb.defineFunctions(object, definition.functions)
-	mb.defineProperties(object, definition.properties)
-	mb.defineConstants(object, definition.constants)
-	mb.defineObjects(object, definition.objects)
+	ab.defineFunctions(object, definition.functions)
+	ab.defineProperties(object, definition.properties)
+	ab.defineConstants(object, definition.constants)
+	ab.defineObjects(object, definition.objects)
 
 	parent.DefineDataProperty(definition.objectName, object, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 }

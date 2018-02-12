@@ -1,7 +1,6 @@
 package gomini
 
 import (
-	"github.com/dop251/goja"
 	"path/filepath"
 	"os"
 	"github.com/go-errors/errors"
@@ -22,14 +21,16 @@ const (
 
 var errNoSuchBundle = errors.New("the given path is not a bundle")
 
-func newBundleManager(kernel *kernel) *bundleManager {
+func newBundleManager(kernel *kernel, apiBinders []ApiProviderBinder) *bundleManager {
 	return &bundleManager{
-		kernel: kernel,
+		kernel:     kernel,
+		apiBinders: apiBinders,
 	}
 }
 
 type bundleManager struct {
-	kernel *kernel
+	kernel     *kernel
+	apiBinders []ApiProviderBinder
 }
 
 func (bm *bundleManager) start() error {
@@ -171,20 +172,10 @@ func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs, transpiler *t
 }
 
 func (bm *bundleManager) registerDefaults(bundle Bundle) error {
-	console := bundle.getSandbox().NewObject()
-	if err := console.Set("log", func(msg string) {
-		stackFrames := bundle.getSandbox().CaptureCallStack(2)
-		frame := stackFrames[1]
-		pos := frame.Position()
-		log.Infof("%s[%d:%d]: %s", frame.SrcName(), pos.Line, pos.Col, msg)
-	}); err != nil {
-		return err
+	for _, binder := range bm.apiBinders {
+		builder := newApiBuilder(nil, bundle, bm.kernel)
+		binder(bm.kernel, bundle, builder)
 	}
-
-	bundle.getSandbox().Set("console", console)
-	bundle.getSandbox().Set("setTimeout", func(call goja.FunctionCall) goja.Value {
-		return goja.Null()
-	})
 
 	if _, err := loadPlainJavascript(bm.kernel, jsPromise, bm.kernel, bundle); err != nil {
 		return err
