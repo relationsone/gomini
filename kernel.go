@@ -83,8 +83,17 @@ func (k *kernel) SecurityInterceptor() SecurityInterceptor {
 			return true
 		}
 
+		moduleName := strings.ToUpper(strings.Split(property, ".")[0])
+		privilege := fmt.Sprintf("PRIVILEGE_%s", moduleName)
+		privileges := caller.Privileges()
+		for _, p := range privileges {
+			if p == privilege {
+				return true
+			}
+		}
+
 		//TODO: add real checks here
-		return true
+		return false
 	}
 }
 
@@ -107,6 +116,7 @@ func (k *kernel) LoadKernelModule(kernelModule KernelModuleDefinition) error {
 }
 
 func (k *kernel) EntryPoint(filename string) error {
+	k.setBundleStatus(BundleStatusStarting)
 	id, err := uuid.NewV4()
 	if err != nil {
 		return err
@@ -117,6 +127,7 @@ func (k *kernel) EntryPoint(filename string) error {
 		return err
 	}
 
+	k.setBundleStatus(BundleStatusStarted)
 	return nil
 }
 
@@ -262,6 +273,12 @@ func (k *kernel) kernelRegisterModule(module *module, dependencies []string, cal
 				file.module.Bundle().Name(), file.module.Origin().FullPath(), bundle.Name(), module.Origin().FullPath())
 
 			if err == nil {
+				securityInterceptor := k.SecurityInterceptor()
+				property := file.module.Name() + ".inject"
+				if !securityInterceptor(bundle, property) {
+					msg := fmt.Sprintf("illegal access violation: dependency injection failed, %s cannot access %s::%s", bundle.Name(), file.module.Bundle().Name(), property)
+					panic(errors.New(msg))
+				}
 				dependentModules[i] = file.module
 				continue
 			}

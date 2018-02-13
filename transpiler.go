@@ -27,7 +27,7 @@ func newTranspiler(kernel *kernel) (*transpiler, error) {
 
 	cacheFile := filepath.Join(cacheVfsPath, cacheJsonFile)
 	if file, err := afero.ReadFile(kernel.Filesystem(), cacheFile); err == nil {
-		json.Unmarshal(file, cache)
+		json.Unmarshal(file, &cache)
 	}
 
 	if cache == nil {

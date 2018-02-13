@@ -143,8 +143,7 @@ func (s *securityProxy) sandboxSecurityCheck(property string, origin Bundle, cal
 	interceptor := origin.SecurityInterceptor()
 	if !caller.Privileged() && interceptor != nil {
 		if !interceptor(caller, property) {
-			msg := fmt.Sprintf("SecurityProxy: Illegal access violation: %s cannot access %s::%s",
-				caller.Name(), origin.Name(), property)
+			msg := fmt.Sprintf("illegal access violation: %s cannot access %s::%s", caller.Name(), origin.Name(), property)
 			panic(errors.New(msg))
 		}
 	}

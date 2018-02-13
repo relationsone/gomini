@@ -162,11 +162,13 @@ func (bm *bundleManager) newBundle(path string, bundlefs afero.Fs, transpiler *t
 
 	bundle.init(bm.kernel)
 
+	bundle.setBundleStatus(BundleStatusStarting)
 	_, err = bm.kernel.loadScriptModule(config.Id, config.Name, "/", &resolvedScriptPath{config.Entrypoint, bundle}, bundle)
 	if err != nil {
 		return nil, err
 	}
 
+	bundle.setBundleStatus(BundleStatusStarted)
 	return bundle, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"github.com/spf13/afero"
+	"github.com/apex/log"
 )
 
 type bundle struct {
@@ -37,6 +38,8 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 		sandbox:     sandbox,
 		loaderStack: make([]string, 0),
 	}
+
+	bundle.setBundleStatus(BundleStatusInstalled)
 
 	system := sandbox.NewObject()
 	sandbox.Set("System", system)
@@ -124,7 +127,6 @@ func (b *bundle) Name() string {
 	return b.name
 }
 
-
 func (b *bundle) Privileged() bool {
 	return b.privileged
 }
@@ -150,6 +152,11 @@ func (b *bundle) getSandbox() *goja.Runtime {
 
 func (b *bundle) getAdapter() *securityProxy {
 	return b.adapter
+}
+
+func (b *bundle) setBundleStatus(status BundleStatus) {
+	b.status = status
+	log.Infof("Bundle %s is now in status %s", b.Name(), status)
 }
 
 func (b *bundle) NewObject() *goja.Object {

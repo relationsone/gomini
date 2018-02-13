@@ -38,7 +38,30 @@ const (
 	BundleStatusDownloading
 	BundleStatusUpdating
 	BundleStatusFailed
+	BundleStatusInstalled
 )
+
+func (b BundleStatus) String() string {
+	switch b {
+	case BundleStatusInstalled:
+		return "INSTALLED"
+	case BundleStatusStarting:
+		return "STARTING"
+	case BundleStatusStarted:
+		return "STARTED"
+	case BundleStatusStopping:
+		return "STOPPING"
+	case BundleStatusStopped:
+		return "STOPPED"
+	case BundleStatusDownloading:
+		return "DOWNLOADING"
+	case BundleStatusUpdating:
+		return "UPDATING"
+	case BundleStatusFailed:
+		return "FAILED"
+	}
+	panic("illegal bundle status")
+}
 
 type Bundle interface {
 	ID() string
@@ -70,6 +93,7 @@ type Bundle interface {
 	popLoaderStack() string
 	pushLoaderStack(element string)
 	getBasePath() string
+	setBundleStatus(status BundleStatus)
 }
 
 type Module interface {
