@@ -17,12 +17,9 @@ type bundle struct {
 	status             BundleStatus
 	sandbox            *goja.Runtime
 	adapter            *securityProxy
-	exports            *goja.Object
 	privileges         []string
 	privileged         bool
 	modules            []*module
-	propertyDefiner    goja.Callable
-	constantDefiner    set_constant
 	propertyDescriptor get_property
 	loaderStack        []string
 }
@@ -38,7 +35,6 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 		basePath:    basePath,
 		filesystem:  filesystem,
 		sandbox:     sandbox,
-		exports:     sandbox.NewObject(),
 		loaderStack: make([]string, 0),
 	}
 
@@ -54,14 +50,12 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 }
 
 func (b *bundle) init(kernel *kernel) error {
-	adapter, err := newSecurityProxy(kernel, b)
+	adapter, err := newSecurityProxy(b)
 	if err != nil {
 		return errors.New(err)
 	}
 
 	sandbox := b.getSandbox()
-	b.propertyDefiner = prepareDefineProperty(sandbox)
-	b.constantDefiner = prepareDefineConstant(sandbox)
 	b.propertyDescriptor = preparePropertyDescriptor(sandbox)
 
 	if err := kernel.bundleManager.registerDefaults(b); err != nil {
@@ -130,9 +124,6 @@ func (b *bundle) Name() string {
 	return b.name
 }
 
-func (b *bundle) getBundleExports() *goja.Object {
-	return b.exports
-}
 
 func (b *bundle) Privileged() bool {
 	return b.privileged
@@ -174,11 +165,15 @@ func (b *bundle) Define(property string, value interface{}) {
 }
 
 func (b *bundle) DefineProperty(object *goja.Object, property string, value interface{}, getter Getter, setter Setter) {
-	callPropertyDefiner(b.propertyDefiner, b.sandbox, object, property, value, getter, setter)
+	if getter == nil && setter == nil {
+		object.DefineDataProperty(property, b.sandbox.ToValue(value), goja.FLAG_TRUE, goja.FLAG_FALSE, goja.FLAG_TRUE)
+	} else {
+		object.DefineAccessorProperty(property, b.sandbox.ToValue(getter), b.sandbox.ToValue(setter), goja.FLAG_FALSE, goja.FLAG_TRUE)
+	}
 }
 
 func (b *bundle) DefineConstant(object *goja.Object, constant string, value interface{}) {
-	b.constantDefiner(object, constant, value)
+	object.DefineDataProperty(constant, b.sandbox.ToValue(value), goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 }
 
 func (b *bundle) PropertyDescriptor(object *goja.Object, property string) (value interface{}, writable bool, getter Getter, setter Setter) {

@@ -180,78 +180,6 @@ func _freezeObject(value goja.Value, runtime *goja.Runtime) goja.Value {
 	}
 }
 
-func prepareDefineProperty(runtime *goja.Runtime) goja.Callable {
-	source := `
-	(function() {
-		return function(parent, set_property, value, getter, setter) {
-			var configuration = {
-				//writable: (value && setter != null),
-				enumerable: true,
-				configurable: false,
-			}
-
-			if (value) {
-				configuration.value = value;
-			}
-
-			if (getter) {
-				configuration.get = function() {
-					return getter();
-				};
-			}
-
-			if (setter) {
-				configuration.set = function(newValue) {
-					setter(newValue);
-				};
-			}
-
-			Object.defineProperty(parent, set_property, configuration);
-		};
-	})()`
-
-	prog, err := compileJavascript("system::DefineProperty", source)
-	if err != nil {
-		panic(err)
-	}
-
-	if value, err := runtime.RunProgram(prog); err != nil {
-		panic(err)
-	} else {
-		var property goja.Callable
-		runtime.ExportTo(value, &property)
-		return property
-	}
-}
-
-func prepareDefineConstant(runtime *goja.Runtime) set_constant {
-	source := `
-	(function() {
-		return function(parent, set_property, value) {
-			Object.defineProperty(parent, set_property, {
-				writable: false,
-				enumerable: true,
-				configurable: false,
-				value: value
-			});
-		}
-	})()
-	`
-
-	prog, err := compileJavascript("system::DefineConstant", source)
-	if err != nil {
-		panic(err)
-	}
-
-	if value, err := runtime.RunProgram(prog); err != nil {
-		panic(err)
-	} else {
-		var constant set_constant
-		runtime.ExportTo(value, &constant)
-		return constant
-	}
-}
-
 func preparePropertyDescriptor(runtime *goja.Runtime) get_property {
 	source := `
 	(function() {
@@ -272,5 +200,37 @@ func preparePropertyDescriptor(runtime *goja.Runtime) get_property {
 		var property get_property
 		runtime.ExportTo(value, &property)
 		return property
+	}
+}
+
+func prepareDeepFreeze(runtime *goja.Runtime) func(*goja.Object) {
+	source := `
+	(function () {
+    	return function (o) {
+        	Object.freeze(o);
+	        Object.getOwnPropertyNames(o).forEach(function (prop) {
+    	        if (o.hasOwnProperty(prop)
+        	        && o[prop] !== null
+            	    && (typeof o[prop] === "object" || typeof o[prop] === "function")
+                	&& !Object.isFrozen(o[prop])) {
+	                deepFreeze(o[prop]);
+    	        }
+        	});
+	        return o;
+    	};
+	})();
+	`
+
+	prog, err := compileJavascript("system::DeepFreeze", source)
+	if err != nil {
+		panic(err)
+	}
+
+	if value, err := runtime.RunProgram(prog); err != nil {
+		panic(err)
+	} else {
+		var deepFreeze func(*goja.Object)
+		runtime.ExportTo(value, &deepFreeze)
+		return deepFreeze
 	}
 }

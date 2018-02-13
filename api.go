@@ -60,7 +60,6 @@ type Bundle interface {
 	FreezeObject(object *goja.Object)
 
 	getSandbox() *goja.Runtime
-	getBundleExports() *goja.Object
 	getAdapter() *securityProxy
 	findModuleById(id string) *module
 	findModuleByName(name string) *module

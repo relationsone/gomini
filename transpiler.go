@@ -18,34 +18,45 @@ const cacheVfsPath = "/kernel/cache"
 type transpiler struct {
 	runtime           *goja.Runtime
 	kernel            *kernel
-	transpiledModules []transpiledModule
+	transpilerVersion string
+	transpilerCache   *transpilerCache
 }
 
 func newTranspiler(kernel *kernel) (*transpiler, error) {
-	var modules []transpiledModule
+	var cache *transpilerCache
 
 	cacheFile := filepath.Join(cacheVfsPath, cacheJsonFile)
 	if file, err := afero.ReadFile(kernel.Filesystem(), cacheFile); err == nil {
-		json.Unmarshal(file, &modules)
+		json.Unmarshal(file, cache)
 	}
 
-	if modules == nil {
-		modules = make([]transpiledModule, 0)
+	if cache == nil {
+		cache = &transpilerCache{
+			TranspilerVersion: "",
+			Modules:           make([]transpiledModule, 0),
+		}
 	}
 
 	transpiler := &transpiler{
-		runtime:           nil,
-		kernel:            kernel,
-		transpiledModules: modules,
+		runtime:         nil,
+		kernel:          kernel,
+		transpilerCache: cache,
 	}
 	return transpiler, nil
 }
 
 func (t *transpiler) initialize() {
 	if t.runtime == nil {
-		log.Info("Transpiler: Setting up typescript transpiler...")
+		log.Info("Transpiler: Setting up TypeScript transpiler...")
 
 		t.runtime = goja.New()
+		t.runtime.GlobalObject().Set("tsVersion", func(call goja.FunctionCall) goja.Value {
+			version := call.Argument(0).String()
+			log.Infof("Transpiler: Using bundled TypeScript compiler V%s", version)
+			t.transpilerVersion = version
+			return goja.Undefined()
+		})
+
 		if _, err := t.loadScript(t.kernel, "/js/typescript"); err != nil {
 			panic(err)
 		}
@@ -178,12 +189,6 @@ func (t *transpiler) transpileAll(bundle Bundle, root string) error {
 func (t *transpiler) loadScript(bundle Bundle, filename string) (goja.Value, error) {
 	scriptFile := t.kernel.resolveScriptPath(t.kernel, filename)
 
-	// TODO Test that the resolved path is already absolute but it should be
-	/*filename, err := filepath.Abs(scriptFile.path)
-	if err != nil {
-		return nil, err
-	}*/
-
 	loaderFilename := fmt.Sprintf("%s:/%s", scriptFile.loader, scriptFile.path)
 
 	source, err := t.kernel.loadContent(bundle, scriptFile.loader.Filesystem(), scriptFile.path)
@@ -201,7 +206,7 @@ func (t *transpiler) loadScript(bundle Bundle, filename string) (goja.Value, err
 }
 
 func (t *transpiler) findTranspiledModule(filename string) *transpiledModule {
-	for _, module := range t.transpiledModules {
+	for _, module := range t.transpilerCache.Modules {
 		if module.OriginalFile == filename {
 			return &module
 		}
@@ -214,9 +219,9 @@ func (t *transpiler) removeTranspiledModule(module *transpiledModule) error {
 		return nil
 	}
 
-	for i, temp := range t.transpiledModules {
+	for i, temp := range t.transpilerCache.Modules {
 		if temp.OriginalFile == module.OriginalFile {
-			t.transpiledModules = append(t.transpiledModules[:i], t.transpiledModules[i+1:]...)
+			t.transpilerCache.Modules = append(t.transpilerCache.Modules[:i], t.transpilerCache.Modules[i+1:]...)
 			return nil
 		}
 	}
@@ -230,7 +235,7 @@ func (t *transpiler) removeTranspiledModule(module *transpiledModule) error {
 
 func (t *transpiler) addTranspiledModule(path, cacheFile, code string, bundle Bundle) error {
 	module := transpiledModule{path, cacheFile, hash(code), bundle.ID()}
-	t.transpiledModules = append(t.transpiledModules, module)
+	t.transpilerCache.Modules = append(t.transpilerCache.Modules, module)
 
 	// Store transpiled module information
 	if err := t.storeModuleCacheInformation(); err != nil {
@@ -242,7 +247,7 @@ func (t *transpiler) addTranspiledModule(path, cacheFile, code string, bundle Bu
 func (t *transpiler) storeModuleCacheInformation() error {
 	file := filepath.Join(cacheVfsPath, cacheJsonFile)
 	t.kernel.filesystem.Remove(file)
-	if data, err := json.Marshal(t.transpiledModules); err != nil {
+	if data, err := json.Marshal(t.transpilerCache); err != nil {
 		return err
 	} else {
 		if err := afero.WriteFile(t.kernel.filesystem, file, data, os.ModePerm); err != nil {
@@ -252,9 +257,14 @@ func (t *transpiler) storeModuleCacheInformation() error {
 	return nil
 }
 
+type transpilerCache struct {
+	TranspilerVersion string             `json:"transpiler_version"`
+	Modules           []transpiledModule `json:"modules"`
+}
+
 type transpiledModule struct {
-	OriginalFile string `json:"originalFile"`
+	OriginalFile string `json:"original_file"`
 	CacheFile    string `json:"cache_file"`
 	Checksum     string `json:"checksum"`
-	BundleId     string `json:"bundleid"`
+	BundleId     string `json:"bundle_id"`
 }

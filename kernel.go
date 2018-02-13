@@ -21,9 +21,9 @@ const kernel_id = "76141a6c-0aec-4973-b04b-8fdd54753e03"
 type registerExport func(name string, value goja.Value)
 type registerCallback func(export registerExport, context *goja.Object) *goja.Object
 
-/**
- * The kernel is a special bundle type, which is the root bundle to be initialized and has
- * all privileges (PRIVILEGE_KERNEL) and can leave bundle boundaries.
+/*
+ The kernel is a special bundle type, which is the root bundle to be initialized and has
+ all privileges (PRIVILEGE_KERNEL) and can leave bundle boundaries.
  */
 type kernel struct {
 	*bundle
@@ -308,11 +308,7 @@ func (k *kernel) kernelRegisterModule(module *module, dependencies []string, cal
 			log.Infof("Kernel: Create security proxy from %s:/%s to %s:/%s",
 				m.Bundle().Name(), m.Origin().FullPath(), bundle.Name(), module.Origin().FullPath())
 
-			securityProxy, err := newSecurityProxy(k, m.Bundle())
-			if err != nil {
-				panic(err)
-			}
-
+			securityProxy := m.Bundle().getAdapter()
 			proxy, err := securityProxy.makeProxy(exports, m.Name(), m.Bundle(), bundle)
 			if err != nil {
 				panic(err)
@@ -340,25 +336,11 @@ func (k *kernel) kernelRegisterModule(module *module, dependencies []string, cal
 	return nil
 }
 
-func (k *kernel) adaptBundleExports(origin Bundle, caller Bundle) (*goja.Object, error) {
-	target := caller.NewObject()
-	err := k.adaptBundleObject(origin.getBundleExports(), target, origin, caller)
-	if err != nil {
-		return nil, err
-	}
-	return target, nil
-}
-
-func (k *kernel) adaptBundleObject(source *goja.Object, target *goja.Object, origin Bundle, caller Bundle) error {
-	return origin.getAdapter().adapt(source, target, origin, caller)
-}
-
 func (k *kernel) loadScriptSource(scriptPath *resolvedScriptPath, allowCaching bool) (*goja.Program, error) {
 	cacheFilename := tsCacheFilename(scriptPath.path, scriptPath.loader, k)
 
 	var prog *goja.Program
 	if allowCaching {
-		// TODO Fix to use kernel namespaced filename (to prevent apps to load known kernel files)
 		prog = k.scriptCache[cacheFilename]
 		if prog != nil {
 			log.Infof("Kernel: Reusing preloaded bytecode for %s:/%s", scriptPath.loader.Name(), scriptPath.path)
@@ -467,19 +449,7 @@ func (k *kernel) resolveScriptPath(bundle Bundle, filename string) *resolvedScri
 	if fileExists(filesystem, candidate) {
 		return &resolvedScriptPath{candidate, bundle}
 	}
-	candidate = filename + ".js"
-	if fileExists(filesystem, candidate) {
-		return &resolvedScriptPath{candidate, bundle}
-	}
-	candidate = filename + ".js.gz"
-	if fileExists(filesystem, candidate) {
-		return &resolvedScriptPath{candidate, bundle}
-	}
 	candidate = filename + ".ts.gz"
-	if fileExists(filesystem, candidate) {
-		return &resolvedScriptPath{candidate, bundle}
-	}
-	candidate = filename + ".js.bz2"
 	if fileExists(filesystem, candidate) {
 		return &resolvedScriptPath{candidate, bundle}
 	}
@@ -487,7 +457,45 @@ func (k *kernel) resolveScriptPath(bundle Bundle, filename string) *resolvedScri
 	if fileExists(filesystem, candidate) {
 		return &resolvedScriptPath{candidate, bundle}
 	}
+	candidate = filepath.Join(filename, "index.d.ts.gz")
+	if fileExists(filesystem, candidate) {
+		return &resolvedScriptPath{candidate, bundle}
+	}
+	candidate = filepath.Join(filename, "index.d.ts.bz2")
+	if fileExists(filesystem, candidate) {
+		return &resolvedScriptPath{candidate, bundle}
+	}
 
+	// Only privileged bundles are allowed to load plain JavaScript code after this point
+	if bundle.Privileged() {
+		candidate = filename + ".js"
+		if fileExists(filesystem, candidate) {
+			return &resolvedScriptPath{candidate, bundle}
+		}
+		candidate = filename + ".js.gz"
+		if fileExists(filesystem, candidate) {
+			return &resolvedScriptPath{candidate, bundle}
+		}
+		candidate = filename + ".js.bz2"
+		if fileExists(filesystem, candidate) {
+			return &resolvedScriptPath{candidate, bundle}
+		}
+		candidate = filepath.Join(filename, "index.js")
+		if fileExists(filesystem, candidate) {
+			return &resolvedScriptPath{candidate, bundle}
+		}
+		candidate = filepath.Join(filename, "index.js.gz")
+		if fileExists(filesystem, candidate) {
+			return &resolvedScriptPath{candidate, bundle}
+		}
+		candidate = filepath.Join(filename, "index.js.bz2")
+		if fileExists(filesystem, candidate) {
+			return &resolvedScriptPath{candidate, bundle}
+		}
+	}
+
+	// Try to resolve local definition files.
+	// Those are resolved right before giving up to prevent to override kernel exports
 	if !strings.HasPrefix(originalFilename, "./") &&
 		!strings.HasPrefix(originalFilename, "../") &&
 		!strings.HasPrefix(originalFilename, "/") {

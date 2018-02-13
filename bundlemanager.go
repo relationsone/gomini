@@ -16,7 +16,6 @@ const (
 
 	bundleJson = "bundle.json"
 	jsPromise  = "/js/kernel/promise.js"
-	jsSystem   = "/js/kernel/system.js"
 )
 
 var errNoSuchBundle = errors.New("the given path is not a bundle")
@@ -178,10 +177,6 @@ func (bm *bundleManager) registerDefaults(bundle Bundle) error {
 	}
 
 	if _, err := loadPlainJavascript(bm.kernel, jsPromise, bm.kernel, bundle); err != nil {
-		return err
-	}
-
-	if _, err := loadPlainJavascript(bm.kernel, jsSystem, bm.kernel, bundle); err != nil {
 		return err
 	}
 
