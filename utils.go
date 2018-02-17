@@ -7,33 +7,14 @@ import (
 	"strings"
 	"crypto/sha256"
 	"encoding/hex"
-	"path/filepath"
 	"github.com/dop251/goja/parser"
 	"github.com/spf13/afero"
+	"fmt"
+	"github.com/go-errors/errors"
+	"github.com/apex/log"
 )
 
-type set_property func(object *goja.Object, propertyName string, value interface{}, getter Getter, setter Setter)
-type set_constant func(object *goja.Object, propertyName string, value interface{})
 type get_property func(object *goja.Object, propertyName string) goja.Value
-
-func stringOrigin(origin Origin) string {
-	if origin == nil {
-		return "no origin available"
-	}
-
-	path := origin.Path()
-	filename := origin.Filename()
-
-	return filepath.Join(path, filename)
-}
-
-func isFunction(value goja.Value) bool {
-	return isDefined(value) && value.ExportType().Kind() == reflect.Func
-}
-
-func isString(value goja.Value) bool {
-	return isDefined(value) && value.ExportType().Kind() == reflect.String
-}
 
 func isArray(value goja.Value) bool {
 	kind := value.ExportType().Kind()
@@ -96,7 +77,18 @@ func isCachedFileCurrent(path string, bundle Bundle) bool {
 }
 
 func executeJavascript(prog *goja.Program, bundle Bundle) (goja.Value, error) {
-	return bundle.getSandbox().RunProgram(prog)
+	return bundle.Sandbox().RunProgram(prog)
+}
+
+func sandboxSecurityCheck(property string, origin Bundle, caller Bundle) {
+	interceptor := origin.SecurityInterceptor()
+	if !caller.Privileged() && interceptor != nil {
+		if !interceptor(caller, property) {
+			msg := fmt.Sprintf("illegal access violation: %s cannot access %s::%s", caller.Name(), origin.Name(), property)
+			panic(errors.New(msg))
+		}
+	}
+	log.Debugf("SecurityProxy: SecurityInterceptor check success: %s", property)
 }
 
 func compileJavascript(filename string, source string) (*goja.Program, error) {
@@ -128,42 +120,6 @@ func propertyDescriptor(runtime *goja.Runtime, descriptor *goja.Object) (interfa
 	}
 
 	return value, writeable, getter, setter
-}
-
-func callPropertyDefiner(callable goja.Callable, runtime *goja.Runtime, object *goja.Object,
-	property string, value interface{}, getter Getter, setter Setter) {
-
-	arguments := make([]goja.Value, 5)
-	arguments[0] = runtime.ToValue(object)
-	arguments[1] = runtime.ToValue(property)
-	arguments[2] = goja.Null()
-	if value != nil {
-		arguments[2] = runtime.ToValue(value)
-	}
-	arguments[3] = goja.Null()
-	if getter != nil {
-		arguments[3] = runtime.ToValue(getter)
-	}
-	arguments[4] = goja.Null()
-	if setter != nil {
-		arguments[4] = runtime.ToValue(setter)
-	}
-	_, err := callable(runtime.ToValue(callable), arguments...)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func DeepFreezeObject(value goja.Value, runtime *goja.Runtime) goja.Value {
-	var deepFreeze goja.Callable
-	function := runtime.Get("deepFreeze")
-	runtime.ExportTo(function, &deepFreeze)
-
-	if val, err := deepFreeze(function, value); err != nil {
-		panic(err)
-	} else {
-		return val
-	}
 }
 
 func _freezeObject(value goja.Value, runtime *goja.Runtime) goja.Value {

@@ -58,7 +58,7 @@ func (b *bundle) init(kernel *kernel) error {
 		return errors.New(err)
 	}
 
-	sandbox := b.getSandbox()
+	sandbox := b.Sandbox()
 	b.propertyDescriptor = preparePropertyDescriptor(sandbox)
 
 	if err := kernel.bundleManager.registerDefaults(b); err != nil {
@@ -142,12 +142,12 @@ func (b *bundle) SecurityInterceptor() SecurityInterceptor {
 	}
 }
 
-func (b *bundle) getBasePath() string {
-	return b.basePath
+func (b *bundle) Sandbox() *goja.Runtime {
+	return b.sandbox
 }
 
-func (b *bundle) getSandbox() *goja.Runtime {
-	return b.sandbox
+func (b *bundle) getBasePath() string {
+	return b.basePath
 }
 
 func (b *bundle) getAdapter() *securityProxy {

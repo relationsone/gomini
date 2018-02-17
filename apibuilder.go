@@ -165,7 +165,7 @@ func (ab *apiBuilder) defineModule() {
 
 		log.Infof("ApiBuilder: Registered builtin module: %s (%s) with %s", ab.moduleName, ab.module.ID(), filename)
 	} else {
-		global := ab.bundle.getSandbox().GlobalObject()
+		global := ab.bundle.Sandbox().GlobalObject()
 		ab.defineFunctions(global, ab.functions)
 		ab.defineProperties(global, ab.properties)
 		ab.defineConstants(global, ab.constants)
@@ -181,7 +181,7 @@ func (ab *apiBuilder) defineFunctions(parent *goja.Object, definitions []*script
 }
 
 func (ab *apiBuilder) defineProperties(parent *goja.Object, definitions []*scriptPropertyDefinition) {
-	sandbox := ab.bundle.getSandbox()
+	sandbox := ab.bundle.Sandbox()
 	for _, property := range definitions {
 		name := property.propertyName
 		if property.getter == nil && property.setter == nil {

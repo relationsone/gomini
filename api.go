@@ -81,8 +81,8 @@ type Bundle interface {
 	DefineConstant(object *goja.Object, constant string, value interface{})
 	PropertyDescriptor(object *goja.Object, property string) (value interface{}, writable bool, getter Getter, setter Setter)
 	FreezeObject(object *goja.Object)
+	Sandbox() *goja.Runtime
 
-	getSandbox() *goja.Runtime
 	getAdapter() *securityProxy
 	findModuleById(id string) *module
 	findModuleByName(name string) *module

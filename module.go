@@ -83,7 +83,7 @@ func (m *module) getModuleExports() *goja.Object {
 }
 
 func (m *module) export(value goja.Value, target interface{}) error {
-	return m.bundle.getSandbox().ExportTo(value, target)
+	return m.bundle.Sandbox().ExportTo(value, target)
 }
 
 func (m *module) setName(name string) {

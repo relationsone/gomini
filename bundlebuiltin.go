@@ -9,13 +9,13 @@ func consoleApi() ApiProviderBinder {
 	return func(kernel Bundle, bundle Bundle, builder ApiBuilder) {
 		consoleBuilder := func(builder ObjectBuilder) {
 			builder.DefineFunction("log", func(msg interface{}) {
-				stackFrames := bundle.getSandbox().CaptureCallStack(2)
+				stackFrames := bundle.Sandbox().CaptureCallStack(2)
 				frame := stackFrames[1]
 				pos := frame.Position()
 				log.Infof("%s#%s[%d:%d]: %s", frame.SrcName(), frame.FuncName(), pos.Line, pos.Col, msg)
 
 			}).DefineFunction("stackTrace", func() {
-				stackFrames := bundle.getSandbox().CaptureCallStack(-1)
+				stackFrames := bundle.Sandbox().CaptureCallStack(-1)
 				log.Infof("Dumping CallStack:")
 				for _, frame := range stackFrames {
 					pos := frame.Position()

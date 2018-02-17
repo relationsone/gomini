@@ -41,6 +41,11 @@ func NewScriptKernel(osfs, bundlefs afero.Fs, apiBinders []ApiProviderBinder) (*
 		scriptCache:    make(map[string]*goja.Program),
 	}
 
+	_, err := goja.NewDebugger()
+	if err != nil {
+		return nil, err
+	}
+
 	apiBinders = append(apiBinders, consoleApi(), timeoutApi())
 
 	kernel.bundleManager = newBundleManager(kernel, apiBinders)
@@ -252,57 +257,74 @@ func (k *kernel) loadScriptModule(id, name, parentPath string, scriptPath *resol
 	return module, nil
 }
 
+func (k *kernel) resolveDependencyModule(dependency string, bundle *bundle, module *module) (Module, error) {
+	scriptPath := k.resolveScriptPath(bundle, dependency)
+
+	vfs, file, err := k.toVirtualKernelFile(scriptPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if vfs {
+		log.Debugf("Kernel: Resolved dependency %s [virtual module file to %s:/%s]",
+			dependency, file.module.Bundle().Name(), file.module.Origin().FullPath())
+
+		log.Infof("Kernel: Needs kernel intervention to get exported modules from %s:/%s to %s:/%s",
+			file.module.Bundle().Name(), file.module.Origin().FullPath(), bundle.Name(), module.Origin().FullPath())
+
+		if err == nil {
+			property := file.module.Name() + ".inject"
+			sandboxSecurityCheck(property, file.module.Bundle(), bundle)
+			return file.module, nil
+		}
+	}
+
+	initMarker := ""
+	var dependentModule Module = bundle.findModuleByModuleFile(scriptPath.path)
+	if dependentModule == nil {
+		id, err := uuid.NewV4()
+		if err != nil {
+			return nil, err
+		}
+
+		moduleId := id.String()
+		m, err := k.loadScriptModule(moduleId, dependency, module.origin.Path(), scriptPath, bundle)
+		if err != nil {
+			panic(err)
+		}
+
+		initMarker = "*"
+		dependentModule = m
+	}
+
+	log.Debugf("Kernel: Reused already loaded module %s (%s:/%s) with id %s",
+		dependency, dependentModule.Bundle().Name(), scriptPath.path, dependentModule.ID())
+
+	log.Debugf("Kernel: Resolved dependency %s [%s:/%s]%s",
+		dependency, scriptPath.loader.Name(), scriptPath.path, initMarker)
+
+	return dependentModule, nil
+}
+
 func (k *kernel) kernelRegisterModule(module *module, dependencies []string, callback registerCallback, bundle *bundle) error {
-	log.Infof("Kernel: Loading module %s (%s) into bundle %s (%s)", module.name, module.id, bundle.name, bundle.id)
+	log.Infof("Kernel: Loading module %s (%s) into bundle %s (%s)", module.Name(), module.ID(), bundle.Name(), bundle.ID())
 
 	exportFunction := func(name string, value goja.Value) {
 		module.getModuleExports().Set(name, value)
 	}
 
-	dependentModules := make([]Module, len(dependencies))
-	for i, filename := range dependencies {
-		scriptPath := k.resolveScriptPath(bundle, filename)
+	if len(dependencies) > 0 {
+		log.Debugf("Kernel: Bundle %s has injection request: [%s]", bundle.Name(), strings.Join(dependencies, ", "))
+	}
 
-		vfs, file, err := k.toVirtualKernelFile(scriptPath)
+	dependentModules := make([]Module, len(dependencies))
+	for i, dependency := range dependencies {
+		dependentModule, err := k.resolveDependencyModule(dependency, bundle, module)
 		if err != nil {
 			return err
 		}
 
-		if vfs {
-			log.Infof("Kernel: Needs kernel intervention to get exported modules from %s:/%s to %s:/%s",
-				file.module.Bundle().Name(), file.module.Origin().FullPath(), bundle.Name(), module.Origin().FullPath())
-
-			if err == nil {
-				securityInterceptor := k.SecurityInterceptor()
-				property := file.module.Name() + ".inject"
-				if !securityInterceptor(bundle, property) {
-					msg := fmt.Sprintf("illegal access violation: dependency injection failed, %s cannot access %s::%s", bundle.Name(), file.module.Bundle().Name(), property)
-					panic(errors.New(msg))
-				}
-				dependentModules[i] = file.module
-				continue
-			}
-		}
-
-		if dependentModule := bundle.findModuleByModuleFile(scriptPath.path); dependentModule == nil {
-			id, err := uuid.NewV4()
-			if err != nil {
-				return err
-			}
-
-			moduleId := id.String()
-			m, err := k.loadScriptModule(moduleId, filename, module.origin.Path(), scriptPath, bundle)
-			if err != nil {
-				panic(err)
-			}
-			dependentModules[i] = m
-
-		} else {
-			log.Infof("Kernel: Reused already loaded module %s (%s:/%s) with id %s",
-				filename, dependentModule.bundle.Name(), scriptPath.path, dependentModule.ID())
-
-			dependentModules[i] = dependentModule
-		}
+		dependentModules[i] = dependentModule
 	}
 
 	context := module.Bundle().NewObject()
