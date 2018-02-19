@@ -2,7 +2,6 @@ package gomini
 
 import (
 	"github.com/dop251/goja"
-	"reflect"
 )
 
 type securityProxy struct {
@@ -123,15 +122,4 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 
 	proxy := caller.Sandbox().NewProxy(target, handler, false, false)
 	return caller.ToValue(proxy), nil
-}
-
-func (s *securityProxy) primitiveValue(value goja.Value) bool {
-	switch value.ExportType().Kind() {
-	case reflect.String | reflect.Int8 | reflect.Int16 | reflect.Int32 | reflect.Int64 | reflect.Int |
-		reflect.Uint8 | reflect.Uint16 | reflect.Uint32 | reflect.Uint64 | reflect.Uint |
-		reflect.Bool | reflect.Float32 | reflect.Float64 | reflect.Complex64 | reflect.Complex128:
-
-		return false
-	}
-	return true
 }

@@ -43,7 +43,7 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 
 	system := sandbox.NewObject()
 	sandbox.Set("System", system)
-	register := sandbox.ToValue(bundle.systemRegister)
+	register := sandbox.ToValue(bundle.__systemRegister)
 	err := system.DefineDataProperty("register", register, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 	if err != nil {
 		return nil, err
@@ -223,7 +223,7 @@ func (b *bundle) peekLoaderStack() string {
 	return b.loaderStack[len(b.loaderStack)-1]
 }
 
-func (b *bundle) systemRegister(call goja.FunctionCall) goja.Value {
+func (b *bundle) __systemRegister(call goja.FunctionCall) goja.Value {
 	var module *module = nil
 	if len(b.loaderStack) > 0 {
 		moduleId := b.peekLoaderStack()
@@ -245,7 +245,7 @@ func (b *bundle) systemRegister(call goja.FunctionCall) goja.Value {
 
 	argument = call.Argument(argIndex)
 	if !isArray(argument) {
-		panic("Neither string (name) or array (dependencies) was passed as the first parameter")
+		panic(errors.New("neither string (name) or array (dependencies) was passed as the first parameter"))
 	}
 	argIndex++
 
@@ -261,7 +261,7 @@ func (b *bundle) systemRegister(call goja.FunctionCall) goja.Value {
 		panic(err)
 	}
 
-	err = b.kernel.kernelRegisterModule(module, dependencies, callback, b)
+	err = b.kernel.registerModule(module, dependencies, callback, b)
 	if err != nil {
 		panic(err)
 	}

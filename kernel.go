@@ -150,72 +150,6 @@ func (k *kernel) defineKernelModule(module Module, filename string, exporter fun
 	module.Bundle().FreezeObject(module.getModuleExports())
 }
 
-func (k *kernel) loadSource(bundle Bundle, filename string) (string, error) {
-	if isTypeScript(filename) {
-		// Is pre-transpiled?
-		cacheFilename := filepath.Join(cacheVfsPath, tsCacheFilename(filename, bundle, k))
-		if !fileExists(k.Filesystem(), cacheFilename) {
-			log.Infof("Kernel: Loading scriptfile '%s:/%s' with live transpiler", bundle.Name(), filename)
-
-			source, err := k.transpile(bundle, filename)
-			if err != nil {
-				return "", err
-			}
-
-			// DEBUG
-			if source != nil {
-				log.Debug(*source)
-			}
-			return *source, nil
-		}
-
-		// Override filename with the pre-transpiled, cached file
-		log.Infof("Kernel: Loading scriptfile '%s:/%s' from pretranspiled cache: kernel:/%s",
-			bundle.Name(), filename, cacheFilename)
-
-		if data, err := k.loadContent(bundle, k.Filesystem(), cacheFilename); err != nil {
-			return "", err
-		} else {
-			return string(data), nil
-		}
-	}
-	if data, err := k.loadContent(bundle, bundle.Filesystem(), filename); err != nil {
-		return "", err
-	} else {
-		return string(data), nil
-	}
-}
-
-func (k *kernel) transpile(bundle Bundle, filename string) (*string, error) {
-	transpiler, err := newTranspiler(k)
-	if err != nil {
-		return nil, errors.New(err)
-	}
-	return transpiler.transpileFile(bundle, filename)
-}
-
-func (k *kernel) loadContent(bundle Bundle, filesystem afero.Fs, filename string) ([]byte, error) {
-	log.Debugf("Kernel: Loading content from scriptfile '%s:/%s'", bundle.Name(), filename)
-
-	b, err := k.resourceLoader.LoadResource(k, filesystem, filename)
-	if err != nil {
-		return nil, err
-	}
-	if strings.HasSuffix(filename, ".gz") {
-		log.Debugf("Kernel: GZIP Decompressing scriptfile: %s:/%s", bundle.Name(), filename)
-
-		if reader, err := gzip.NewReader(bytes.NewReader(b)); err != nil {
-			return nil, err
-		} else {
-			return ioutil.ReadAll(reader)
-		}
-	} else if strings.HasSuffix(filename, ".bz2") {
-		log.Debugf("Kernel: BZIP Decompressing scriptfile: %s:/%s", bundle.Name(), filename)
-		return ioutil.ReadAll(bzip2.NewReader(bytes.NewReader(b)))
-	}
-	return b, nil
-}
-
 func (k *kernel) loadScriptModule(id, name, parentPath string, scriptPath *resolvedScriptPath, bundle *bundle) (Module, error) {
 	//loadingBundle := bundle
 
@@ -257,56 +191,29 @@ func (k *kernel) loadScriptModule(id, name, parentPath string, scriptPath *resol
 	return module, nil
 }
 
-func (k *kernel) resolveDependencyModule(dependency string, bundle *bundle, module *module) (Module, error) {
-	scriptPath := k.resolveScriptPath(bundle, dependency)
+func (k *kernel) loadContent(bundle Bundle, filesystem afero.Fs, filename string) ([]byte, error) {
+	log.Debugf("Kernel: Loading content from scriptfile '%s:/%s'", bundle.Name(), filename)
 
-	vfs, file, err := k.toVirtualKernelFile(scriptPath)
+	b, err := k.resourceLoader.LoadResource(k, filesystem, filename)
 	if err != nil {
 		return nil, err
 	}
+	if strings.HasSuffix(filename, ".gz") {
+		log.Debugf("Kernel: GZIP Decompressing scriptfile: %s:/%s", bundle.Name(), filename)
 
-	if vfs {
-		log.Debugf("Kernel: Resolved dependency %s [virtual module file to %s:/%s]",
-			dependency, file.module.Bundle().Name(), file.module.Origin().FullPath())
-
-		log.Infof("Kernel: Needs kernel intervention to get exported modules from %s:/%s to %s:/%s",
-			file.module.Bundle().Name(), file.module.Origin().FullPath(), bundle.Name(), module.Origin().FullPath())
-
-		if err == nil {
-			property := file.module.Name() + ".inject"
-			sandboxSecurityCheck(property, file.module.Bundle(), bundle)
-			return file.module, nil
-		}
-	}
-
-	initMarker := ""
-	var dependentModule Module = bundle.findModuleByModuleFile(scriptPath.path)
-	if dependentModule == nil {
-		id, err := uuid.NewV4()
-		if err != nil {
+		if reader, err := gzip.NewReader(bytes.NewReader(b)); err != nil {
 			return nil, err
+		} else {
+			return ioutil.ReadAll(reader)
 		}
-
-		moduleId := id.String()
-		m, err := k.loadScriptModule(moduleId, dependency, module.origin.Path(), scriptPath, bundle)
-		if err != nil {
-			panic(err)
-		}
-
-		initMarker = "*"
-		dependentModule = m
+	} else if strings.HasSuffix(filename, ".bz2") {
+		log.Debugf("Kernel: BZIP Decompressing scriptfile: %s:/%s", bundle.Name(), filename)
+		return ioutil.ReadAll(bzip2.NewReader(bytes.NewReader(b)))
 	}
-
-	log.Debugf("Kernel: Reused already loaded module %s (%s:/%s) with id %s",
-		dependency, dependentModule.Bundle().Name(), scriptPath.path, dependentModule.ID())
-
-	log.Debugf("Kernel: Resolved dependency %s [%s:/%s]%s",
-		dependency, scriptPath.loader.Name(), scriptPath.path, initMarker)
-
-	return dependentModule, nil
+	return b, nil
 }
 
-func (k *kernel) kernelRegisterModule(module *module, dependencies []string, callback registerCallback, bundle *bundle) error {
+func (k *kernel) registerModule(module *module, dependencies []string, callback registerCallback, bundle *bundle) error {
 	log.Infof("Kernel: Loading module %s (%s) into bundle %s (%s)", module.Name(), module.ID(), bundle.Name(), bundle.ID())
 
 	exportFunction := func(name string, value goja.Value) {
@@ -319,7 +226,7 @@ func (k *kernel) kernelRegisterModule(module *module, dependencies []string, cal
 
 	dependentModules := make([]Module, len(dependencies))
 	for i, dependency := range dependencies {
-		dependentModule, err := k.resolveDependencyModule(dependency, bundle, module)
+		dependentModule, err := k.__resolveDependencyModule(dependency, bundle, module)
 		if err != nil {
 			return err
 		}
@@ -389,7 +296,7 @@ func (k *kernel) loadScriptSource(scriptPath *resolvedScriptPath, allowCaching b
 	loaderName := fmt.Sprintf("%s:/%s", scriptPath.loader.Name(), scriptPath.path)
 
 	if prog == nil {
-		source, err := k.loadSource(scriptPath.loader, scriptPath.path)
+		source, err := k.__loadSource(scriptPath.loader, scriptPath.path)
 		if err != nil {
 			return nil, err
 		}
@@ -416,20 +323,6 @@ func (k *kernel) loadScriptSource(scriptPath *resolvedScriptPath, allowCaching b
 	}
 
 	return prog, nil
-}
-
-func (k *kernel) toVirtualKernelFile(scriptPath *resolvedScriptPath) (bool, *exportFile, error) {
-	bundle := scriptPath.loader
-	f, err := bundle.Filesystem().Open(scriptPath.path)
-	if err != nil {
-		return false, nil, err
-	}
-	switch ff := f.(type) {
-	case *compositeFile:
-		e, success := ff.file.(*exportFile)
-		return success && !e.dir, e, nil
-	}
-	return false, nil, nil
 }
 
 func (k *kernel) toKernelPath(path string, bundle Bundle) string {
