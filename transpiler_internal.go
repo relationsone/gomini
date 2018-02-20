@@ -80,7 +80,7 @@ func (t *transpiler) __transpileSource(source string) (*string, error) {
 func (t *transpiler) __loadScript(bundle Bundle, filename string) (goja.Value, error) {
 	scriptFile := t.kernel.resolveScriptPath(t.kernel, filename)
 
-	loaderFilename := fmt.Sprintf("%s:/%s", scriptFile.loader, scriptFile.path)
+	loaderFilename := fmt.Sprintf("%s:/%s", scriptFile.loader.Name(), scriptFile.path)
 
 	source, err := t.kernel.loadContent(bundle, scriptFile.loader.Filesystem(), scriptFile.path)
 	if err != nil {

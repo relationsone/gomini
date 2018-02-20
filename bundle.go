@@ -43,7 +43,7 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 
 	system := sandbox.NewObject()
 	sandbox.Set("System", system)
-	register := sandbox.ToValue(bundle.__systemRegister)
+	register := sandbox.MakeNamedNativeFunctionValue("<module-init>", bundle.__systemRegister)
 	err := system.DefineDataProperty("register", register, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 	if err != nil {
 		return nil, err

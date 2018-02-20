@@ -157,7 +157,7 @@ func (ab *apiBuilder) defineModule() {
 		filename := filepath.Join(ab.module.Origin().Path(), ab.module.Origin().Filename())
 
 		ab.kernel.defineKernelModule(ab.module, filename, func(exports *goja.Object) {
-			ab.defineFunctions(exports, ab.functions)
+			ab.defineFunctions(ab.moduleName, exports, ab.functions)
 			ab.defineProperties(exports, ab.properties)
 			ab.defineConstants(exports, ab.constants)
 			ab.defineObjects(exports, ab.objects)
@@ -166,16 +166,16 @@ func (ab *apiBuilder) defineModule() {
 		log.Infof("ApiBuilder: Registered builtin module: %s (%s) with %s", ab.moduleName, ab.module.ID(), filename)
 	} else {
 		global := ab.bundle.Sandbox().GlobalObject()
-		ab.defineFunctions(global, ab.functions)
+		ab.defineFunctions("", global, ab.functions)
 		ab.defineProperties(global, ab.properties)
 		ab.defineConstants(global, ab.constants)
 		ab.defineObjects(global, ab.objects)
 	}
 }
 
-func (ab *apiBuilder) defineFunctions(parent *goja.Object, definitions []*scriptFunctionDefinition) {
+func (ab *apiBuilder) defineFunctions(propertyName string, parent *goja.Object, definitions []*scriptFunctionDefinition) {
 	for _, function := range definitions {
-		value := ab.bundle.ToValue(function.function)
+		value := ab.bundle.Sandbox().MakeNamedNativeFunctionValue(propertyName + "." + function.functionName, function.function)
 		parent.DefineDataProperty(function.functionName, value, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 	}
 }
@@ -242,7 +242,7 @@ func (ab *apiBuilder) defineObjects(parent *goja.Object, definitions []*scriptOb
 func (ab *apiBuilder) defineObject(parent *goja.Object, definition *scriptObjectDefinition) {
 	object := ab.bundle.NewObject()
 
-	ab.defineFunctions(object, definition.functions)
+	ab.defineFunctions(definition.objectName, object, definition.functions)
 	ab.defineProperties(object, definition.properties)
 	ab.defineConstants(object, definition.constants)
 	ab.defineObjects(object, definition.objects)
