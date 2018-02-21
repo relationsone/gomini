@@ -163,7 +163,7 @@ func (ab *apiBuilder) defineModule() {
 			ab.defineObjects(exports, ab.objects)
 		})
 
-		log.Infof("ApiBuilder: Registered builtin module: %s (%s) with %s", ab.moduleName, ab.module.ID(), filename)
+		log.Infof("ApiBuilder: Registered builtin module: %s with '%s:/%s'", ab.moduleName, ab.bundle.Name(), filename)
 	} else {
 		global := ab.bundle.Sandbox().GlobalObject()
 		ab.defineFunctions("", global, ab.functions)
@@ -175,7 +175,7 @@ func (ab *apiBuilder) defineModule() {
 
 func (ab *apiBuilder) defineFunctions(propertyName string, parent *goja.Object, definitions []*scriptFunctionDefinition) {
 	for _, function := range definitions {
-		value := ab.bundle.Sandbox().MakeNamedNativeFunctionValue(propertyName + "." + function.functionName, function.function)
+		value := ab.bundle.Sandbox().NewNamedNativeFunction(propertyName+"."+function.functionName, function.function)
 		parent.DefineDataProperty(function.functionName, value, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
 	}
 }

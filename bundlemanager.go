@@ -54,7 +54,7 @@ func (bm *bundleManager) start() error {
 			return nil
 		}
 
-		log.Infof("BundleManager: Loaded bundle %s (%s)", bundle.Name(), bundle.ID())
+		log.Infof("BundleManager: Loaded bundle %s", bundle.Name())
 
 		if info != nil {
 			return filepath.SkipDir

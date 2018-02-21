@@ -30,7 +30,7 @@ func (t *transpiler) __initialize() {
 		t.runtime = goja.New()
 		t.runtime.GlobalObject().Set("tsVersion", func(call goja.FunctionCall) goja.Value {
 			version := call.Argument(0).String()
-			log.Infof("Transpiler: Using bundled TypeScript compiler V%s", version)
+			log.Infof("Transpiler: Using bundled TypeScript v%s", version)
 			t.transpilerVersion = version
 			return goja.Undefined()
 		})
@@ -81,6 +81,7 @@ func (t *transpiler) __loadScript(bundle Bundle, filename string) (goja.Value, e
 	scriptFile := t.kernel.resolveScriptPath(t.kernel, filename)
 
 	loaderFilename := fmt.Sprintf("%s:/%s", scriptFile.loader.Name(), scriptFile.path)
+	log.Infof("Transpiler: Cache for '%s' is stale, transpiling now")
 
 	source, err := t.kernel.loadContent(bundle, scriptFile.loader.Filesystem(), scriptFile.path)
 	if err != nil {

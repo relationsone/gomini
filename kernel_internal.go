@@ -16,11 +16,11 @@ func (k *kernel) __resolveDependencyModule(dependency string, bundle *bundle, mo
 	}
 
 	if vfs {
-		log.Debugf("Kernel: Resolved dependency %s [virtual module file to %s:/%s]",
+		log.Debugf("Kernel: Resolved dependency %s [virtual module file to '%s:/%s']",
 			dependency, file.module.Bundle().Name(), file.module.Origin().FullPath())
 
-		log.Infof("Kernel: Needs kernel intervention to get exported modules from %s:/%s to %s:/%s",
-			file.module.Bundle().Name(), file.module.Origin().FullPath(), bundle.Name(), module.Origin().FullPath())
+		log.Debugf("Kernel: Needs security proxy for exported modules '%s:/%s' to '%s:/%s'",
+			bundle.Name(), module.Origin().FullPath(), file.module.Bundle().Name(), file.module.Origin().FullPath())
 
 		if err == nil {
 			property := file.module.Name() + ".inject"
@@ -60,7 +60,7 @@ func (k *kernel) __loadSource(bundle Bundle, filename string) (string, error) {
 		// Is pre-transpiled?
 		cacheFilename := filepath.Join(cacheVfsPath, tsCacheFilename(filename, bundle, k))
 		if !fileExists(k.Filesystem(), cacheFilename) {
-			log.Infof("Kernel: Loading scriptfile '%s:/%s' with live transpiler", bundle.Name(), filename)
+			log.Debugf("Kernel: Loading scriptfile '%s:/%s' with live transpiler", bundle.Name(), filename)
 
 			source, err := k.__transpile(bundle, filename)
 			if err != nil {
@@ -75,7 +75,7 @@ func (k *kernel) __loadSource(bundle Bundle, filename string) (string, error) {
 		}
 
 		// Override filename with the pre-transpiled, cached file
-		log.Infof("Kernel: Loading scriptfile '%s:/%s' from pretranspiled cache: kernel:/%s",
+		log.Debugf("Kernel: Loading scriptfile '%s:/%s' from pretranspiled cache: kernel:/%s",
 			bundle.Name(), filename, cacheFilename)
 
 		if data, err := k.loadContent(bundle, k.Filesystem(), cacheFilename); err != nil {

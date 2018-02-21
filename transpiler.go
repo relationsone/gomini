@@ -66,7 +66,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 
 	isCached := fileExists(t.kernel.Filesystem(), cacheFile)
 	if isCached && module != nil && module.Checksum == checksum {
-		log.Debugf("Transpiler: Already transpiled %s:/%s as kernel:/%s...", bundle.Name(), path, cacheFile)
+		log.Debugf("Transpiler: Already transpiled '%s:/%s' as 'kernel:/%s'...", bundle.Name(), path, cacheFile)
 		f, err := t.kernel.Filesystem().Open(cacheFile)
 		if err != nil {
 			return nil, err
@@ -80,7 +80,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 	}
 
 	if isCached {
-		log.Debugf("Transpiler: Cache is out of date for %s:/%s as kernel:/%s...", bundle.Name(), path, cacheFile)
+		log.Debugf("Transpiler: Cache is out of date for '%s:/%s' as 'kernel:/%s'...", bundle.Name(), path, cacheFile)
 	}
 
 	// Module exists but either cache file is missing or checksum doesn't match anymore
@@ -90,7 +90,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 	// Remove old module definition
 	t.__removeTranspiledModule(module)
 
-	log.Infof("Transpiler: Transpiling %s:/%s to kernel:/%s...", bundle.Name(), path, cacheFile)
+	log.Infof("Transpiler: Transpiling '%s:/%s' to 'kernel:/%s'...", bundle.Name(), path, cacheFile)
 
 	if source, err := t.__transpileSource(code); err != nil {
 		return nil, err

@@ -43,7 +43,7 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 
 	system := sandbox.NewObject()
 	sandbox.Set("System", system)
-	register := sandbox.MakeNamedNativeFunctionValue("<module-init>", bundle.__systemRegister)
+	register := sandbox.NewNamedNativeFunction("<module-init>", bundle.__systemRegister)
 	err := system.DefineDataProperty("register", register, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 	if err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func (b *bundle) getAdapter() *securityProxy {
 
 func (b *bundle) setBundleStatus(status BundleStatus) {
 	b.status = status
-	log.Infof("Bundle %s is now in status %s", b.Name(), status)
+	log.Infof("Bundle: Status of '%s' changed to %s", b.Name(), status)
 }
 
 func (b *bundle) NewObject() *goja.Object {

@@ -43,6 +43,12 @@ func isTypeScript(filename string) bool {
 		strings.HasSuffix(filename, ".d.ts.bz2")
 }
 
+func isJavaScript(filename string) bool {
+	return strings.HasSuffix(filename, ".js") ||
+		strings.HasSuffix(filename, ".js.gz") ||
+		strings.HasSuffix(filename, ".js.bz2")
+}
+
 func hash(value string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(value))

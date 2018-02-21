@@ -35,6 +35,8 @@ type kernel struct {
 }
 
 func NewScriptKernel(osfs, bundlefs afero.Fs, apiBinders []ApiProviderBinder) (*kernel, error) {
+	log.Infof("Gomini is starting...")
+
 	kernel := &kernel{
 		osfs:           osfs,
 		resourceLoader: newResourceLoader(),
@@ -214,7 +216,7 @@ func (k *kernel) loadContent(bundle Bundle, filesystem afero.Fs, filename string
 }
 
 func (k *kernel) registerModule(module *module, dependencies []string, callback registerCallback, bundle *bundle) error {
-	log.Infof("Kernel: Loading module %s (%s) into bundle %s (%s)", module.Name(), module.ID(), bundle.Name(), bundle.ID())
+	log.Debugf("Kernel: Loading module %s (%s) into bundle %s (%s)", module.Name(), module.ID(), bundle.Name(), bundle.ID())
 
 	exportFunction := func(name string, value goja.Value) {
 		module.getModuleExports().Set(name, value)
@@ -251,8 +253,8 @@ func (k *kernel) registerModule(module *module, dependencies []string, callback 
 
 		exports := m.getModuleExports()
 		if m.Bundle().ID() != bundle.ID() {
-			log.Infof("Kernel: Create security proxy from %s:/%s to %s:/%s",
-				m.Bundle().Name(), m.Origin().FullPath(), bundle.Name(), module.Origin().FullPath())
+			log.Debugf("Kernel: Create security proxy from '%s:/%s' to '%s:/%s'",
+				bundle.Name(), module.Origin().FullPath(), m.Bundle().Name(), m.Origin().FullPath())
 
 			securityProxy := m.Bundle().getAdapter()
 			proxy, err := securityProxy.makeProxy(exports, m.Name(), m.Bundle(), bundle)
@@ -273,7 +275,7 @@ func (k *kernel) registerModule(module *module, dependencies []string, callback 
 	}
 
 	// Register the actual classes
-	log.Infof("Kernel: Executing initializer of module: %s", module.Name())
+	log.Debugf("Kernel: Executing initializer of module: %s", module.Name())
 
 	if _, err := executable(execute); err != nil {
 		panic(err)
@@ -285,11 +287,13 @@ func (k *kernel) registerModule(module *module, dependencies []string, callback 
 func (k *kernel) loadScriptSource(scriptPath *resolvedScriptPath, allowCaching bool) (*goja.Program, error) {
 	cacheFilename := tsCacheFilename(scriptPath.path, scriptPath.loader, k)
 
+	log.Infof("Kernel: Loading script '%s:/%s'", scriptPath.loader.Name(), scriptPath.path)
+
 	var prog *goja.Program
 	if allowCaching {
 		prog = k.scriptCache[cacheFilename]
 		if prog != nil {
-			log.Infof("Kernel: Reusing preloaded bytecode for %s:/%s", scriptPath.loader.Name(), scriptPath.path)
+			log.Debugf("Kernel: Reusing preloaded bytecode for '%s:/%s'", scriptPath.loader.Name(), scriptPath.path)
 		}
 	}
 
@@ -357,6 +361,10 @@ func (k *kernel) resolveScriptPath(bundle Bundle, filename string) *resolvedScri
 	// Clean path (removes ../ and ./)
 	filename = filepath.Clean(filename)
 	filename = filepath.Join(parent, filename)
+
+	if isJavaScript(filename) && !bundle.Privileged() {
+		return nil
+	}
 
 	// See if we already have an extension
 	if ext := filepath.Ext(filename); ext != "" {
