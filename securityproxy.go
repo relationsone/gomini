@@ -41,7 +41,8 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 				Enumerable:   goja.FLAG_TRUE,
 				Value:        nil,
 				Setter:       nil,
-				Getter: caller.ToValue(func() goja.Value {
+				Getter: caller.Sandbox().ToValue(func() goja.Value {
+					// TODO
 					return nil
 				}),
 			}
@@ -65,7 +66,7 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 			return target.Get(property) != nil
 		},
 		OwnKeys: func(target *goja.Object) *goja.Object {
-			return caller.ToValue(target.Keys()).(*goja.Object)
+			return caller.ToValue(target.Keys()).unwrap().(*goja.Object)
 		},
 		Apply: func(target *goja.Object, this *goja.Object, argumentsList []goja.Value) goja.Value {
 			sandboxSecurityCheck(propertyName+".apply", origin, caller)
@@ -121,5 +122,5 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 	}
 
 	proxy := caller.Sandbox().NewProxy(target, handler, false, false)
-	return caller.ToValue(proxy), nil
+	return caller.ToValue(proxy).unwrap(), nil
 }

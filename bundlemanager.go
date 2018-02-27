@@ -65,8 +65,9 @@ func (bm *bundleManager) start() error {
 
 func (bm *bundleManager) registerDefaults(bundle Bundle) error {
 	for _, binder := range bm.apiBinders {
-		builder := newApiBuilder(nil, bundle, bm.kernel)
-		binder(bm.kernel, bundle, builder)
+		objectBuilder := newObjectCreator(bundle.Name(), bundle.Sandbox().GlobalObject(), bundle)
+		binder(bm.kernel, bundle, objectBuilder)
+		objectBuilder.Build()
 	}
 
 	if _, err := loadPlainJavascript(bm.kernel, jsPromise, bm.kernel, bundle); err != nil {

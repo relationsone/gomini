@@ -16,16 +16,17 @@ func (k *kernel) __resolveDependencyModule(dependency string, bundle *bundle, mo
 	}
 
 	if vfs {
+		kernelModule := file.syscall(bundle).(Module)
 		log.Debugf("Kernel: Resolved dependency %s [virtual module file to '%s:/%s']",
-			dependency, file.module.Bundle().Name(), file.module.Origin().FullPath())
+			dependency, kernelModule.Bundle().Name(), kernelModule.Origin().FullPath())
 
 		log.Debugf("Kernel: Needs security proxy for exported modules '%s:/%s' to '%s:/%s'",
-			bundle.Name(), module.Origin().FullPath(), file.module.Bundle().Name(), file.module.Origin().FullPath())
+			bundle.Name(), module.Origin().FullPath(), kernelModule.Bundle().Name(), kernelModule.Origin().FullPath())
 
 		if err == nil {
-			property := file.module.Name() + ".inject"
-			sandboxSecurityCheck(property, file.module.Bundle(), bundle)
-			return file.module, nil
+			property := kernelModule.Name() + ".inject"
+			sandboxSecurityCheck(property, kernelModule.Bundle(), bundle)
+			return kernelModule, nil
 		}
 	}
 
@@ -99,7 +100,7 @@ func (k *kernel) __transpile(bundle Bundle, filename string) (*string, error) {
 	return transpiler.transpileFile(bundle, filename)
 }
 
-func (k *kernel) __toVirtualKernelFile(scriptPath *resolvedScriptPath) (bool, *exportFile, error) {
+func (k *kernel) __toVirtualKernelFile(scriptPath *resolvedScriptPath) (bool, *kernelFile, error) {
 	bundle := scriptPath.loader
 	f, err := bundle.Filesystem().Open(scriptPath.path)
 	if err != nil {
@@ -107,7 +108,7 @@ func (k *kernel) __toVirtualKernelFile(scriptPath *resolvedScriptPath) (bool, *e
 	}
 	switch ff := f.(type) {
 	case *compositeFile:
-		e, success := ff.file.(*exportFile)
+		e, success := ff.file.(*kernelFile)
 		return success && !e.dir, e, nil
 	}
 	return false, nil, nil

@@ -82,7 +82,7 @@ func (m *module) getModuleExports() *goja.Object {
 	return m.exports
 }
 
-func (m *module) export(value goja.Value, target interface{}) error {
+func (m *module) export(value goja.Value, target Any) error {
 	return m.bundle.Sandbox().ExportTo(value, target)
 }
 

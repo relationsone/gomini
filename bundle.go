@@ -22,6 +22,9 @@ type bundle struct {
 	privileged         bool
 	modules            []*module
 	propertyDescriptor get_property
+	freezer            func(object *goja.Object)
+	null               JsValue
+	undefined          JsValue
 	loaderStack        []string
 }
 
@@ -59,7 +62,10 @@ func (b *bundle) init(kernel *kernel) error {
 	}
 
 	sandbox := b.Sandbox()
+	b.null = newJsValue(goja.Null(), b)
+	b.undefined = newJsValue(goja.Undefined(), b)
 	b.propertyDescriptor = preparePropertyDescriptor(sandbox)
+	b.freezer = prepareDeepFreeze(sandbox)
 
 	if err := kernel.bundleManager.registerDefaults(b); err != nil {
 		return err
@@ -68,6 +74,14 @@ func (b *bundle) init(kernel *kernel) error {
 	b.adapter = adapter
 
 	return nil
+}
+
+func (b *bundle) Null() JsValue {
+	return b.null
+}
+
+func (b *bundle) Undefined() JsValue {
+	return b.undefined
 }
 
 func (b *bundle) Filesystem() afero.Fs {
@@ -107,16 +121,20 @@ func (b *bundle) findModuleById(id string) *module {
 	return nil
 }
 
-func (b *bundle) Export(value goja.Value, target interface{}) error {
+func (b *bundle) Export(value goja.Value, target Any) error {
 	return b.sandbox.ExportTo(value, target)
 }
 
-func (b *bundle) ToValue(value interface{}) goja.Value {
-	return b.sandbox.ToValue(value)
+func (b *bundle) ToValue(value Any) JsValue {
+	return newJsValue(b.sandbox.ToValue(value), b)
 }
 
 func (b *bundle) FreezeObject(object *goja.Object) {
-	_freezeObject(b.ToValue(object), b.sandbox)
+	__freezeObject(b.sandbox.ToValue(object), b.sandbox)
+}
+
+func (b *bundle) DeepFreezeObject(object *goja.Object) {
+	b.freezer(object)
 }
 
 func (b *bundle) ID() string {
@@ -146,11 +164,20 @@ func (b *bundle) Sandbox() *goja.Runtime {
 	return b.sandbox
 }
 
+func (b *bundle) NewTypeError(args ...Any) JsValue {
+	err := b.Sandbox().NewTypeError(args)
+	return newJsValue(err, b)
+}
+
+func (b *bundle) NewObjectBuilder(objectName string) BundleObjectBuilder {
+	return BundleObjectBuilder(newObjectCreator(objectName, nil, b))
+}
+
 func (b *bundle) getBasePath() string {
 	return b.basePath
 }
 
-func (b *bundle) getAdapter() *securityProxy {
+func (b *bundle) getSecurityProxy() *securityProxy {
 	return b.adapter
 }
 
@@ -165,27 +192,6 @@ func (b *bundle) NewObject() *goja.Object {
 
 func (b *bundle) NewException(err error) *goja.Object {
 	return b.sandbox.NewGoError(err)
-}
-
-func (b *bundle) Define(property string, value interface{}) {
-	b.sandbox.Set(property, value)
-}
-
-func (b *bundle) DefineProperty(object *goja.Object, property string, value interface{}, getter Getter, setter Setter) {
-	if getter == nil && setter == nil {
-		object.DefineDataProperty(property, b.sandbox.ToValue(value), goja.FLAG_TRUE, goja.FLAG_FALSE, goja.FLAG_TRUE)
-	} else {
-		object.DefineAccessorProperty(property, b.sandbox.ToValue(getter), b.sandbox.ToValue(setter), goja.FLAG_FALSE, goja.FLAG_TRUE)
-	}
-}
-
-func (b *bundle) DefineConstant(object *goja.Object, constant string, value interface{}) {
-	object.DefineDataProperty(constant, b.sandbox.ToValue(value), goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE)
-}
-
-func (b *bundle) PropertyDescriptor(object *goja.Object, property string) (value interface{}, writable bool, getter Getter, setter Setter) {
-	descriptor := b.propertyDescriptor(object, property)
-	return propertyDescriptor(b.sandbox, descriptor.ToObject(b.sandbox))
 }
 
 func (b *bundle) addModule(module *module) {

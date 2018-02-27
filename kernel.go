@@ -104,7 +104,7 @@ func (k *kernel) SecurityInterceptor() SecurityInterceptor {
 	}
 }
 
-func (k *kernel) LoadKernelModule(kernelModule KernelModuleDefinition) error {
+func (k *kernel) LoadKernelModule(kernelModule KernelModule) error {
 	scriptPath := k.resolveScriptPath(k, kernelModule.ApiDefinitionFile())
 
 	origin := newOrigin(scriptPath.path)
@@ -115,9 +115,12 @@ func (k *kernel) LoadKernelModule(kernelModule KernelModuleDefinition) error {
 	module.kernel = true
 	k.addModule(module)
 
-	builder := newApiBuilder(module, k, k)
-	binder := kernelModule.KernelModuleBinder()
-	binder(k, builder)
+	k.defineKernelModule(module, module.Origin().FullPath(), func(exports *goja.Object) {
+		binder := kernelModule.KernelModuleBinder()
+		objectCreator := newObjectCreator("", exports, k)
+		binder(k, objectCreator)
+		objectCreator.Build()
+	})
 
 	return nil
 }
@@ -206,6 +209,7 @@ func (k *kernel) loadContent(bundle Bundle, filesystem afero.Fs, filename string
 		if reader, err := gzip.NewReader(bytes.NewReader(b)); err != nil {
 			return nil, err
 		} else {
+			defer reader.Close()
 			return ioutil.ReadAll(reader)
 		}
 	} else if strings.HasSuffix(filename, ".bz2") {
@@ -256,7 +260,7 @@ func (k *kernel) registerModule(module *module, dependencies []string, callback 
 			log.Debugf("Kernel: Create security proxy from '%s:/%s' to '%s:/%s'",
 				bundle.Name(), module.Origin().FullPath(), m.Bundle().Name(), m.Origin().FullPath())
 
-			securityProxy := m.Bundle().getAdapter()
+			securityProxy := m.Bundle().getSecurityProxy()
 			proxy, err := securityProxy.makeProxy(exports, m.Name(), m.Bundle(), bundle)
 			if err != nil {
 				panic(err)
@@ -311,13 +315,14 @@ func (k *kernel) loadScriptSource(scriptPath *resolvedScriptPath, allowCaching b
 		}
 
 		if prog != nil && allowCaching {
-			if t, err := goja.ExportProgram(prog, 1); err != nil {
+			// TODO export bytecode
+			/*if t, err := goja.ExportProgram(prog, 1); err != nil {
 				panic(err)
 			} else {
 				if _, err := goja.ReadProgram(bytes.NewReader(t), 1); err != nil {
 					panic(err)
 				}
-			}
+			}*/
 			k.scriptCache[cacheFilename] = prog
 		}
 	}

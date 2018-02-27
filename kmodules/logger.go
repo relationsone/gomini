@@ -2,7 +2,6 @@ package kmodules
 
 import (
 	"github.com/relationsone/gomini"
-	"github.com/dop251/goja"
 	"github.com/apex/log"
 	"fmt"
 )
@@ -12,7 +11,7 @@ const kmoduleLoggerId = "3c6bddf9-7c84-41c4-8796-22379c4a5e29"
 type kmoduleLogger struct {
 }
 
-func NewLoggerModule() gomini.KernelModuleDefinition {
+func NewLoggerModule() gomini.KernelModule {
 	return &kmoduleLogger{}
 }
 
@@ -36,14 +35,14 @@ func (*kmoduleLogger) SecurityInterceptor() gomini.SecurityInterceptor {
 }
 
 func (*kmoduleLogger) KernelModuleBinder() gomini.KernelModuleBinder {
-	return func(bundle gomini.Bundle, builder gomini.ApiBuilder) {
+	return func(bundle gomini.Bundle, builder gomini.JsObjectBuilder) {
 		builder.
-			DefineObject("log", func(builder gomini.ObjectBuilder) {
-			builder.DefineFunction("info", func(call goja.FunctionCall) goja.Value {
+			DefineObjectProperty("log", func(builder gomini.JsObjectBuilder) {
+			builder.DefineFunction("info", func(call gomini.JsFunctionCall) gomini.JsValue {
 				sandbox := bundle.Sandbox()
 
 				if len(call.Arguments) < 1 {
-					return sandbox.NewTypeError("info called without arguments")
+					return bundle.NewTypeError("info called without arguments")
 				}
 
 				msg := call.Argument(0).String()
@@ -59,8 +58,8 @@ func (*kmoduleLogger) KernelModuleBinder() gomini.KernelModuleBinder {
 				frame := stackFrames[0]
 				pos := frame.Position()
 				log.Infof("%s#%s[%d:%d]: %s", frame.SrcName(), frame.FuncName(), pos.Line, pos.Col, msg)
-				return goja.Undefined()
-			}).EndObject()
-		}).EndApi()
+				return bundle.Undefined()
+			})
+		})
 	}
 }

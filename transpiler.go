@@ -80,7 +80,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 	}
 
 	if isCached {
-		log.Debugf("Transpiler: Cache is out of date for '%s:/%s' as 'kernel:/%s'...", bundle.Name(), path, cacheFile)
+		log.Infof("Transpiler: Cache for '%s:/%s' is stale, transpiling...", bundle.Name(), path)
 	}
 
 	// Module exists but either cache file is missing or checksum doesn't match anymore

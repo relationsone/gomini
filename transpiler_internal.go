@@ -36,7 +36,7 @@ func (t *transpiler) __initialize() {
 		})
 
 		console := t.runtime.NewObject()
-		console.Set("log", func(msg interface{}) {
+		console.Set("log", func(msg Any) {
 			stackFrames := t.runtime.CaptureCallStack(2)
 			frame := stackFrames[1]
 			pos := frame.Position()
@@ -81,7 +81,6 @@ func (t *transpiler) __loadScript(bundle Bundle, filename string) (goja.Value, e
 	scriptFile := t.kernel.resolveScriptPath(t.kernel, filename)
 
 	loaderFilename := fmt.Sprintf("%s:/%s", scriptFile.loader.Name(), scriptFile.path)
-	log.Infof("Transpiler: Cache for '%s' is stale, transpiling now")
 
 	source, err := t.kernel.loadContent(bundle, scriptFile.loader.Filesystem(), scriptFile.path)
 	if err != nil {

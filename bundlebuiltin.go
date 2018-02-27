@@ -7,41 +7,43 @@ import (
 )
 
 func consoleApi() ApiProviderBinder {
-	return func(kernel Bundle, bundle Bundle, builder ApiBuilder) {
-		consoleBuilder := func(builder ObjectBuilder) {
-			builder.DefineFunction("log", func(call goja.FunctionCall) goja.Value {
+	return func(kernel Bundle, bundle Bundle, builder BundleObjectBuilder) {
+		consoleBuilder := func(builder JsObjectBuilder) {
+			builder.DefineFunction("log", func(call JsFunctionCall) JsValue {
 				stackFrames := bundle.Sandbox().CaptureCallStack(2)
-				frame := stackFrames[0]
-				if strings.HasPrefix(frame.SrcName(), "<native>") {
-					if len(stackFrames) > 1 {
-						frame = stackFrames[1]
-					} else {
-						frame = goja.StackFrame{}
+				var frame goja.StackFrame
+				for i := 0; i < len(stackFrames); i++ {
+					frame = stackFrames[i]
+					if !strings.HasPrefix(frame.SrcName(), "<native>") {
+						break
 					}
+				}
+				if &frame == nil {
+					frame = goja.StackFrame{}
 				}
 				pos := frame.Position()
 				msg := call.Argument(0)
 				log.Infof("%s::%s[%d:%d]: %s", frame.SrcName(), frame.FuncName(), pos.Line, pos.Col, msg)
-				return goja.Undefined()
+				return bundle.Undefined()
 
-			}).DefineFunction("stackTrace", func() {
+			}).DefineGoFunction("stackTrace", func() {
 				stackFrames := bundle.Sandbox().CaptureCallStack(-1)
 				log.Infof("Dumping CallStack:")
 				for _, frame := range stackFrames {
 					pos := frame.Position()
 					log.Infof("\t%s::%s[%d:%d]", frame.SrcName(), frame.FuncName(), pos.Line, pos.Col)
 				}
-			}).EndObject()
+			})
 		}
 
-		builder.DefineObject("console", consoleBuilder).EndApi()
+		builder.DefineObjectProperty("console", consoleBuilder)
 	}
 }
 
 func timeoutApi() ApiProviderBinder {
-	return func(kernel Bundle, bundle Bundle, builder ApiBuilder) {
-		builder.DefineFunction("setTimeout", func(call goja.FunctionCall) goja.Value {
-			return goja.Null()
-		}).EndApi()
+	return func(kernel Bundle, bundle Bundle, builder BundleObjectBuilder) {
+		builder.DefineFunction("setTimeout", func(call JsFunctionCall) JsValue {
+			return bundle.Null()
+		})
 	}
 }

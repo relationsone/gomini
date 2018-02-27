@@ -18,5 +18,6 @@ func (rl *resourceLoader) LoadResource(kernel *kernel, filesystem afero.Fs, file
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 	return ioutil.ReadAll(file)
 }

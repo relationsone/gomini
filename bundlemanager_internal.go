@@ -40,12 +40,12 @@ func (bm *bundleManager) __createBundleFilesystem(path string, info os.FileInfo)
 	}
 
 	if compositefs != nil {
-		exportfs := newExportFs()
+		exportfs := newKernelFs()
 		// TODO Add privilege checks to only make requested modules available
 		root := exportfs.root
 		for _, m := range bm.kernel.modules {
 			if m.kernel {
-				if err := root.createFile(m.origin.Filename(), []byte{}, m); err != nil {
+				if err := root.createFile(m.origin.Filename(), []byte{}, bm.__bindModuleToKernelSyscall(m)); err != nil {
 					return nil, err
 				}
 			}
@@ -58,6 +58,12 @@ func (bm *bundleManager) __createBundleFilesystem(path string, info os.FileInfo)
 	return nil, errNoSuchBundle
 }
 
+func (bm *bundleManager) __bindModuleToKernelSyscall(module Module) KernelSyscall {
+	return func(caller Bundle) Any {
+		return module
+	}
+}
+
 func (bm *bundleManager) __newBundle(path string, bundlefs afero.Fs, transpiler *transpiler) (Bundle, error) {
 	bundleFile := filepath.Join(path, bundleJson)
 	log.Infof("BundleManager: Loading new bundle from kernel:/%s", bundleFile)
@@ -65,6 +71,7 @@ func (bm *bundleManager) __newBundle(path string, bundlefs afero.Fs, transpiler 
 	if err != nil {
 		return nil, errors.New(err)
 	}
+	defer reader.Close()
 
 	content, err := ioutil.ReadAll(reader)
 	if err != nil {
