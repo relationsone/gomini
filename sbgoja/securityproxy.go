@@ -1,23 +1,27 @@
-package gomini
+package sbgoja
 
 import (
 	"github.com/dop251/goja"
+	"github.com/relationsone/gomini"
 )
 
 type securityProxy struct {
-	vm *goja.Runtime
+	sandbox *sandbox
 }
 
-func newSecurityProxy(bundle Bundle) (*securityProxy, error) {
+func newSecurityProxy(sandbox *sandbox) *securityProxy {
 	return &securityProxy{
-		vm: bundle.Sandbox(),
-	}, nil
+		sandbox: sandbox,
+	}
 }
 
-func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, origin, caller Bundle) (goja.Value, error) {
+func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, origin, caller gomini.Bundle) (*goja.Object, error) {
+	originRuntime := unwrapGojaRuntime(origin)
+	callerRuntime := unwrapGojaRuntime(caller)
+
 	handler := &goja.ProxyTrapConfig{
 		GetPrototypeOf: func(target *goja.Object) *goja.Object {
-			return caller.Sandbox().NewTypeError("Proxies have no prototypes")
+			return callerRuntime.NewTypeError("Proxies have no prototypes")
 		},
 		IsExtensible: func(target *goja.Object) bool {
 			return false
@@ -41,14 +45,14 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 				Enumerable:   goja.FLAG_TRUE,
 				Value:        nil,
 				Setter:       nil,
-				Getter: caller.Sandbox().ToValue(func() goja.Value {
+				Getter: callerRuntime.ToValue(func() goja.Value {
 					// TODO
 					return nil
 				}),
 			}
 		},
 		Get: func(target *goja.Object, property string, receiver *goja.Object) goja.Value {
-			sandboxSecurityCheck(propertyName+"."+property+".get", origin, caller)
+			s.accessCheck(propertyName+"."+property+".get", origin, caller)
 
 			source := target.Get(property)
 			if o, ok := source.(*goja.Object); ok {
@@ -61,15 +65,15 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 			return source
 		},
 		Has: func(target *goja.Object, property string) bool {
-			sandboxSecurityCheck(propertyName+"."+property+".has", origin, caller)
+			s.accessCheck(propertyName+"."+property+".has", origin, caller)
 
 			return target.Get(property) != nil
 		},
 		OwnKeys: func(target *goja.Object) *goja.Object {
-			return caller.ToValue(target.Keys()).unwrap().(*goja.Object)
+			return callerRuntime.ToValue(target.Keys()).(*goja.Object)
 		},
 		Apply: func(target *goja.Object, this *goja.Object, argumentsList []goja.Value) goja.Value {
-			sandboxSecurityCheck(propertyName+".apply", origin, caller)
+			s.accessCheck(propertyName+".apply", origin, caller)
 
 			thisProxy, err := s.makeProxy(this, propertyName+".this", caller, origin)
 			if err != nil {
@@ -77,7 +81,7 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 			}
 
 			var function func(goja.FunctionCall) goja.Value
-			err = origin.Sandbox().ExportTo(target, &function)
+			err = originRuntime.ExportTo(target, &function)
 			if err != nil {
 				panic(err)
 			}
@@ -102,7 +106,7 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 		},
 		Construct: func(target *goja.Object, argumentsList []goja.Value, newTarget *goja.Object) *goja.Object {
 			var constructor func(call goja.ConstructorCall) *goja.Object
-			err := origin.Sandbox().ExportTo(target, &constructor)
+			err := originRuntime.ExportTo(target, &constructor)
 			if err != nil {
 				panic(err)
 			}
@@ -117,10 +121,16 @@ func (s *securityProxy) makeProxy(target *goja.Object, propertyName string, orig
 				panic(err)
 			}
 
-			return proxy.(*goja.Object)
+			return proxy
 		},
 	}
 
-	proxy := caller.Sandbox().NewProxy(target, handler, false, false)
-	return caller.ToValue(proxy).unwrap(), nil
+	proxy := callerRuntime.NewProxy(target, handler, false, false)
+	return callerRuntime.ToValue(proxy).(*goja.Object), nil
+}
+
+func (s *securityProxy) accessCheck(propertyName string, origin, caller gomini.Bundle) {
+	if err := sandboxSecurityCheck(propertyName, origin, caller); err != nil {
+		panic(err)
+	}
 }

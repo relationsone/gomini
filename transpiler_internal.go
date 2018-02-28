@@ -1,7 +1,6 @@
 package gomini
 
 import (
-	"github.com/dop251/goja"
 	"github.com/apex/log"
 	"github.com/go-errors/errors"
 	"path/filepath"
@@ -24,30 +23,30 @@ type transpiledModule struct {
 }
 
 func (t *transpiler) __initialize() {
-	if t.runtime == nil {
+	if t.sandbox == nil {
 		log.Info("Transpiler: Setting up TypeScript transpiler...")
 
-		t.runtime = goja.New()
-		t.runtime.GlobalObject().Set("tsVersion", func(call goja.FunctionCall) goja.Value {
+		t.sandbox = t.kernel.sandboxFactory(t.kernel)
+		t.sandbox.Global().DefineFunction("tsVersion", "tsVersion", func(call FunctionCall) Value {
 			version := call.Argument(0).String()
 			log.Infof("Transpiler: Using bundled TypeScript v%s", version)
 			t.transpilerVersion = version
-			return goja.Undefined()
+			return t.sandbox.UndefinedValue()
 		})
 
-		console := t.runtime.NewObject()
-		console.Set("log", func(msg Any) {
-			stackFrames := t.runtime.CaptureCallStack(2)
+		builder := t.sandbox.NewObjectCreator("console")
+		builder.DefineGoFunction("log", "log", func(msg Any) {
+			stackFrames := t.sandbox.CaptureCallStack(2)
 			frame := stackFrames[1]
 			pos := frame.Position()
 			log.Infof("%s[%d:%d]: %s", frame.SrcName(), pos.Line, pos.Col, msg)
 		})
-		t.runtime.GlobalObject().Set("console", console)
+		builder.BuildInto("console", t.sandbox.Global())
 
-		if _, err := t.__loadScript(t.kernel, "/js/typescript"); err != nil {
+		if _, err := t.__loadScript(t.kernel, "/js/typescript", ""); err != nil {
 			panic(err)
 		}
-		if _, err := t.__loadScript(t.kernel, "/js/tsc"); err != nil {
+		if _, err := t.__loadScript(t.kernel, "embedded://tsc.js", tscSource); err != nil {
 			panic(err)
 		}
 	}
@@ -58,18 +57,18 @@ func (t *transpiler) __transpileSource(source string) (*string, error) {
 	t.__initialize()
 
 	// Retrieve the transpiler function from the runtime
-	jsTranspiler := t.runtime.Get("transpiler")
-	if jsTranspiler == nil || jsTranspiler == goja.Null() {
+	jsTranspiler := t.sandbox.Global().Get("transpiler")
+	if jsTranspiler == nil || jsTranspiler == t.sandbox.NullValue() {
 		panic(errors.New("transpiler function not available"))
 	}
 
-	var transpiler goja.Callable
-	if err := t.runtime.ExportTo(jsTranspiler, &transpiler); err != nil {
+	var transpiler Callable
+	if err := t.sandbox.Export(jsTranspiler, &transpiler); err != nil {
 		return nil, err
 	}
 
 	// Transpile
-	if val, err := transpiler(jsTranspiler, t.runtime.ToValue(source)); err != nil {
+	if val, err := transpiler(jsTranspiler, t.sandbox.ToValue(source)); err != nil {
 		return nil, err
 	} else {
 		source := val.String()
@@ -77,23 +76,26 @@ func (t *transpiler) __transpileSource(source string) (*string, error) {
 	}
 }
 
-func (t *transpiler) __loadScript(bundle Bundle, filename string) (goja.Value, error) {
-	scriptFile := t.kernel.resolveScriptPath(t.kernel, filename)
+func (t *transpiler) __loadScript(bundle Bundle, filename string, source string) (Value, error) {
+	if source == "" {
+		scriptFile := t.kernel.resolveScriptPath(t.kernel, filename)
 
-	loaderFilename := fmt.Sprintf("%s:/%s", scriptFile.loader.Name(), scriptFile.path)
+		filename = fmt.Sprintf("%s:/%s", scriptFile.loader.Name(), scriptFile.path)
 
-	source, err := t.kernel.loadContent(bundle, scriptFile.loader.Filesystem(), scriptFile.path)
-	if err != nil {
-		return nil, err
+		s, err := t.kernel.loadContent(bundle, scriptFile.loader.Filesystem(), scriptFile.path)
+		if err != nil {
+			return nil, err
 
+		}
+		source = string(s)
 	}
 
-	prog, err := compileJavascript(loaderFilename, string(source))
+	script, _, err := t.sandbox.Compile(filename, source)
 	if err != nil {
 		return nil, err
 	}
 
-	return t.runtime.RunProgram(prog)
+	return t.sandbox.Execute(script)
 }
 
 func (t *transpiler) __findTranspiledModule(filename string) *transpiledModule {
@@ -147,3 +149,43 @@ func (t *transpiler) __storeModuleCacheInformation() error {
 	}
 	return nil
 }
+
+const tscSource = `
+tsVersion(ts.version);
+
+function transpiler(source) {
+    var result = ts.transpileModule(source, {
+        compilerOptions: {
+            moduleResolution: "node",
+            module: "System",
+            target: "es5",
+            isolatedModules: true,
+            importHelpers: true,
+            tsconfig: false,
+            noImplicitAny: false,
+            alwaysStrict: true,
+            inlineSourceMap: true,
+            diagnostics: true,
+            strictPropertyInitialization: true,
+            allowJs: false,
+            downlevelIteration: true,
+            noLib: true,
+            declaration: true,
+            typeRoots: [
+                "scripts/types"
+            ],
+            lib: [
+                "lib/libbase.d.ts"
+            ]
+        },
+        reportDiagnostics: true,
+        transformers: []
+    });
+
+    for (var i = 0; i < result.diagnostics.length; i++) {
+        ts.sys.write(result.diagnostics[i]);
+    }
+
+    return result.outputText;
+}
+`

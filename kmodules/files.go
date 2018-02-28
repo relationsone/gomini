@@ -36,7 +36,7 @@ func (files) SecurityInterceptor() gomini.SecurityInterceptor {
 }
 
 func (files) KernelModuleBinder() gomini.KernelModuleBinder {
-	return func(bundle gomini.Bundle, builder gomini.JsObjectBuilder) {
+	return func(bundle gomini.Bundle, builder gomini.ObjectBuilder) {
 		resolve := func(ppath string) (*path, error) {
 			info, err := bundle.Filesystem().Stat(ppath)
 			if !os.IsNotExist(err) {
@@ -62,7 +62,7 @@ func (files) KernelModuleBinder() gomini.KernelModuleBinder {
 			}, nil
 		}
 
-		builder.DefineFunction("resolvePath", func(call gomini.JsFunctionCall) gomini.JsValue {
+		builder.DefineFunction("resolvePath", "resolvePath", func(call gomini.FunctionCall) gomini.Value {
 			if len(call.Arguments) < 1 {
 				return bundle.NewTypeError("illegal number of arguments")
 			}
@@ -99,7 +99,7 @@ type path struct {
 	bundle   gomini.Bundle
 }
 
-func (p *path) exists(call gomini.JsFunctionCall) gomini.JsValue {
+func (p *path) exists(call gomini.FunctionCall) gomini.Value {
 	exists, err := afero.Exists(p.bundle.Filesystem(), p.path)
 	if err != nil {
 		return p.bundle.NewTypeError(err)
@@ -107,7 +107,7 @@ func (p *path) exists(call gomini.JsFunctionCall) gomini.JsValue {
 	return p.bundle.ToValue(exists)
 }
 
-func (p *path) mkdir(call gomini.JsFunctionCall) gomini.JsValue {
+func (p *path) mkdir(call gomini.FunctionCall) gomini.Value {
 	if len(call.Arguments) < 1 {
 		return p.bundle.NewTypeError("illegal number of arguments")
 	}
@@ -131,8 +131,8 @@ func (p *path) mkdir(call gomini.JsFunctionCall) gomini.JsValue {
 	return p.bundle.Undefined()
 }
 
-func (p *path) resolve(resolve func(string) (*path, error)) func(gomini.JsFunctionCall) gomini.JsValue {
-	return func(call gomini.JsFunctionCall) gomini.JsValue {
+func (p *path) resolve(resolve func(string) (*path, error)) func(gomini.FunctionCall) gomini.Value {
+	return func(call gomini.FunctionCall) gomini.Value {
 		if len(call.Arguments) < 1 {
 			return p.bundle.NewTypeError("illegal number of arguments")
 		}
@@ -152,26 +152,26 @@ func (p *path) resolve(resolve func(string) (*path, error)) func(gomini.JsFuncti
 	}
 }
 
-func (p *path) toFile(call gomini.JsFunctionCall) gomini.JsValue {
+func (p *path) toFile(call gomini.FunctionCall) gomini.Value {
 	// TODO
 	return p.bundle.Undefined()
 }
 
-func (p *path) toPipe(call gomini.JsFunctionCall) gomini.JsValue {
+func (p *path) toPipe(call gomini.FunctionCall) gomini.Value {
 	// TODO
 	return p.bundle.Undefined()
 }
 
-func (p *path) adapt(resolve func(string) (*path, error)) gomini.JsObject {
+func (p *path) adapt(resolve func(string) (*path, error)) gomini.Object {
 	builder := p.bundle.NewObjectBuilder("path")
 	builder.
 		DefineConstant("name", p.name).
 		DefineConstant("path", p.path).
 		DefineConstant("type", p.filetype).
-		DefineFunction("exists", p.exists).
-		DefineFunction("mkdir", p.mkdir).
-		DefineFunction("resolve", p.resolve(resolve)).
-		DefineFunction("toFile", p.toFile).
-		DefineFunction("toPipe", p.toPipe)
+		DefineFunction("exists", "exists", p.exists).
+		DefineFunction("mkdir", "mkdir", p.mkdir).
+		DefineFunction("resolve", "resolve", p.resolve(resolve)).
+		DefineFunction("toFile", "toFile", p.toFile).
+		DefineFunction("toPipe", "toPipe", p.toPipe)
 	return builder.Build()
 }

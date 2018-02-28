@@ -35,10 +35,9 @@ func (*kmoduleLogger) SecurityInterceptor() gomini.SecurityInterceptor {
 }
 
 func (*kmoduleLogger) KernelModuleBinder() gomini.KernelModuleBinder {
-	return func(bundle gomini.Bundle, builder gomini.JsObjectBuilder) {
-		builder.
-			DefineObjectProperty("log", func(builder gomini.JsObjectBuilder) {
-			builder.DefineFunction("info", func(call gomini.JsFunctionCall) gomini.JsValue {
+	return func(bundle gomini.Bundle, builder gomini.ObjectBuilder) {
+		consoleBuilder := func(builder gomini.ObjectBuilder) {
+			method := func(call gomini.FunctionCall) gomini.Value {
 				sandbox := bundle.Sandbox()
 
 				if len(call.Arguments) < 1 {
@@ -59,7 +58,11 @@ func (*kmoduleLogger) KernelModuleBinder() gomini.KernelModuleBinder {
 				pos := frame.Position()
 				log.Infof("%s#%s[%d:%d]: %s", frame.SrcName(), frame.FuncName(), pos.Line, pos.Col, msg)
 				return bundle.Undefined()
-			})
-		})
+			}
+
+			builder.DefineFunction("info", "info", method).
+				DefineFunction("log", "log", method)
+		}
+		builder.DefineObjectProperty("console", consoleBuilder)
 	}
 }

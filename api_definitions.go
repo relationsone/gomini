@@ -1,12 +1,11 @@
 package gomini
 
 import (
-	"github.com/dop251/goja"
 	"github.com/spf13/afero"
 )
 
-type KernelModuleBinder func(bundle Bundle, builder JsObjectBuilder)
-type ApiProviderBinder func(kernel Bundle, bundle Bundle, builder BundleObjectBuilder)
+type KernelModuleBinder func(bundle Bundle, builder ObjectBuilder)
+type ApiProviderBinder func(kernel Bundle, bundle Bundle, builder ObjectCreator)
 
 type SecurityInterceptor func(caller Bundle, property string) (accessGranted bool)
 
@@ -30,8 +29,10 @@ type Module interface {
 	Origin() Origin
 	Bundle() Bundle
 
-	export(value goja.Value, target Any) error
-	getModuleExports() *goja.Object
+	IsAccessible(caller Bundle) error
+
+	export(value Value, target Any) error
+	getModuleExports() Object
 	setName(name string)
 }
 

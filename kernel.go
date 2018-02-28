@@ -1,7 +1,6 @@
 package gomini
 
 import (
-	"github.com/dop251/goja"
 	"path/filepath"
 	"fmt"
 	"strings"
@@ -18,8 +17,7 @@ import (
 
 const kernel_id = "76141a6c-0aec-4973-b04b-8fdd54753e03"
 
-type registerExport func(name string, value goja.Value)
-type registerCallback func(export registerExport, context *goja.Object) *goja.Object
+type registerCallback func(export func(name string, value Value), context Object) Object
 
 /*
  The kernel is a special bundle type, which is the root bundle to be initialized and has
@@ -31,21 +29,18 @@ type kernel struct {
 	bundleManager  *bundleManager
 	keyManager     bacc.KeyManager
 	resourceLoader ResourceLoader
-	scriptCache    map[string]*goja.Program
+	sandboxFactory SandboxFactory
+	scriptCache    map[string]Script
 }
 
-func NewScriptKernel(osfs, bundlefs afero.Fs, apiBinders []ApiProviderBinder) (*kernel, error) {
+func NewScriptKernel(osfs, bundlefs afero.Fs, sandboxFactory SandboxFactory, apiBinders []ApiProviderBinder) (*kernel, error) {
 	log.Infof("Gomini is starting...")
 
 	kernel := &kernel{
 		osfs:           osfs,
 		resourceLoader: newResourceLoader(),
-		scriptCache:    make(map[string]*goja.Program),
-	}
-
-	_, err := goja.NewDebugger()
-	if err != nil {
-		return nil, err
+		sandboxFactory: sandboxFactory,
+		scriptCache:    make(map[string]Script),
 	}
 
 	apiBinders = append(apiBinders, consoleApi(), timeoutApi())
@@ -59,6 +54,11 @@ func NewScriptKernel(osfs, bundlefs afero.Fs, apiBinders []ApiProviderBinder) (*
 	kernel.bundle = bundle
 	if err := kernel.bundle.init(kernel); err != nil {
 		return nil, errors.New(err)
+	}
+
+	_, err = kernel.sandbox.NewDebugger()
+	if err != nil {
+		return nil, err
 	}
 
 	// Pre-transpile all typescript sourcefiles that are out of date
@@ -115,11 +115,11 @@ func (k *kernel) LoadKernelModule(kernelModule KernelModule) error {
 	module.kernel = true
 	k.addModule(module)
 
-	k.defineKernelModule(module, module.Origin().FullPath(), func(exports *goja.Object) {
+	k.defineKernelModule(module, module.Origin().FullPath(), func(exports Object) {
 		binder := kernelModule.KernelModuleBinder()
-		objectCreator := newObjectCreator("", exports, k)
+		objectCreator := k.sandbox.NewObjectCreator(kernelModule.Name())
 		binder(k, objectCreator)
-		objectCreator.Build()
+		objectCreator.BuildInto("", exports)
 	})
 
 	return nil
@@ -141,7 +141,7 @@ func (k *kernel) EntryPoint(filename string) error {
 	return nil
 }
 
-func (k *kernel) defineKernelModule(module Module, filename string, exporter func(exports *goja.Object)) {
+func (k *kernel) defineKernelModule(module Module, filename string, exporter func(exports Object)) {
 	// Load the script definition file
 	_, err := k.loadScriptModule(module.ID(), module.Name(), "/", &resolvedScriptPath{filename, k.bundle}, k.bundle)
 	if err != nil {
@@ -189,7 +189,7 @@ func (k *kernel) loadScriptModule(id, name, parentPath string, scriptPath *resol
 		return nil, errors.New(err)
 	}
 
-	if val != goja.Undefined() && val != goja.Null() {
+	if val != bundle.Undefined() && val != bundle.Null() {
 		return nil, errors.New(fmt.Sprintf("Modules are not supposed to return anything: %s", val.Export()))
 	}
 
@@ -222,8 +222,8 @@ func (k *kernel) loadContent(bundle Bundle, filesystem afero.Fs, filename string
 func (k *kernel) registerModule(module *module, dependencies []string, callback registerCallback, bundle *bundle) error {
 	log.Debugf("Kernel: Loading module %s (%s) into bundle %s (%s)", module.Name(), module.ID(), bundle.Name(), bundle.ID())
 
-	exportFunction := func(name string, value goja.Value) {
-		module.getModuleExports().Set(name, value)
+	exportFunction := func(name string, value Value) {
+		module.getModuleExports().DefineConstant(name, value)
 	}
 
 	if len(dependencies) > 0 {
@@ -241,11 +241,11 @@ func (k *kernel) registerModule(module *module, dependencies []string, callback 
 	}
 
 	context := module.Bundle().NewObject()
-	context.Set("id", module.ID())
+	context.DefineConstant("id", module.ID())
 
 	initializer := callback(exportFunction, context)
 
-	var setters []goja.Callable
+	var setters []Callable
 	if err := module.export(initializer.Get("setters"), &setters); err != nil {
 		panic(err)
 	}
@@ -260,20 +260,19 @@ func (k *kernel) registerModule(module *module, dependencies []string, callback 
 			log.Debugf("Kernel: Create security proxy from '%s:/%s' to '%s:/%s'",
 				bundle.Name(), module.Origin().FullPath(), m.Bundle().Name(), m.Origin().FullPath())
 
-			securityProxy := m.Bundle().getSecurityProxy()
-			proxy, err := securityProxy.makeProxy(exports, m.Name(), m.Bundle(), bundle)
+			moduleProxy, err := m.Bundle().Sandbox().NewModuleProxy(m.getModuleExports(), m.Name(), bundle)
 			if err != nil {
 				panic(err)
 			}
-			exports = proxy.(*goja.Object)
+			exports = moduleProxy
 		}
 
-		if _, err := setter(goja.Undefined(), exports); err != nil {
+		if _, err := setter(k.Undefined(), exports); err != nil {
 			panic(err)
 		}
 	}
 
-	var executable goja.Callable
+	var executable Callable
 	if err := module.export(execute, &executable); err != nil {
 		panic(err)
 	}
@@ -288,12 +287,12 @@ func (k *kernel) registerModule(module *module, dependencies []string, callback 
 	return nil
 }
 
-func (k *kernel) loadScriptSource(scriptPath *resolvedScriptPath, allowCaching bool) (*goja.Program, error) {
+func (k *kernel) loadScriptSource(scriptPath *resolvedScriptPath, allowCaching bool) (Script, error) {
 	cacheFilename := tsCacheFilename(scriptPath.path, scriptPath.loader, k)
 
 	log.Infof("Kernel: Loading script '%s:/%s'", scriptPath.loader.Name(), scriptPath.path)
 
-	var prog *goja.Program
+	var prog Script
 	if allowCaching {
 		prog = k.scriptCache[cacheFilename]
 		if prog != nil {
@@ -309,12 +308,13 @@ func (k *kernel) loadScriptSource(scriptPath *resolvedScriptPath, allowCaching b
 			return nil, err
 		}
 
-		prog, err = compileJavascript(loaderName, source)
+		var cacheable bool
+		prog, cacheable, err = k.sandbox.Compile(loaderName, source)
 		if err != nil {
 			return nil, err
 		}
 
-		if prog != nil && allowCaching {
+		if prog != nil && cacheable && allowCaching {
 			// TODO export bytecode
 			/*if t, err := goja.ExportProgram(prog, 1); err != nil {
 				panic(err)

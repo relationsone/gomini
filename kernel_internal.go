@@ -24,8 +24,10 @@ func (k *kernel) __resolveDependencyModule(dependency string, bundle *bundle, mo
 			bundle.Name(), module.Origin().FullPath(), kernelModule.Bundle().Name(), kernelModule.Origin().FullPath())
 
 		if err == nil {
-			property := kernelModule.Name() + ".inject"
-			sandboxSecurityCheck(property, kernelModule.Bundle(), bundle)
+			// We panic if access not granted
+			if err := kernelModule.IsAccessible(bundle); err != nil {
+				panic(err)
+			}
 			return kernelModule, nil
 		}
 	}

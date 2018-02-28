@@ -1,7 +1,6 @@
 package gomini
 
 import (
-	"github.com/dop251/goja"
 	"github.com/spf13/afero"
 )
 
@@ -46,23 +45,22 @@ type Bundle interface {
 	Privileged() bool
 	Privileges() []string
 	SecurityInterceptor() SecurityInterceptor
-	Export(value goja.Value, target Any) error
+	Export(value Value, target Any) error
 	Status() BundleStatus
 	Filesystem() afero.Fs
 
-	Null() JsValue
-	Undefined() JsValue
+	Null() Value
+	Undefined() Value
 
-	NewObjectBuilder(objectName string) BundleObjectBuilder
-	NewObject() *goja.Object
-	NewException(err error) *goja.Object
-	ToValue(value Any) JsValue
-	FreezeObject(object *goja.Object)
-	DeepFreezeObject(object *goja.Object)
-	NewTypeError(args ...Any) JsValue
-	Sandbox() *goja.Runtime
+	NewObjectBuilder(objectName string) ObjectCreator
+	NewObject() Object
+	NewException(err error) Object
+	ToValue(value Any) Value
+	FreezeObject(object Object)
+	DeepFreezeObject(object Object)
+	NewTypeError(args ...Any) Value
+	Sandbox() Sandbox
 
-	getSecurityProxy() *securityProxy
 	findModuleById(id string) *module
 	findModuleByName(name string) *module
 	findModuleByModuleFile(file string) *module
@@ -73,9 +71,4 @@ type Bundle interface {
 	pushLoaderStack(element string)
 	getBasePath() string
 	setBundleStatus(status BundleStatus)
-}
-
-type BundleObjectBuilder interface {
-	JsObjectBuilder
-	Build() JsObject
 }

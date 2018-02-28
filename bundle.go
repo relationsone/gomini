@@ -1,7 +1,6 @@
 package gomini
 
 import (
-	"github.com/dop251/goja"
 	"github.com/go-errors/errors"
 	"path/filepath"
 	"reflect"
@@ -10,27 +9,20 @@ import (
 )
 
 type bundle struct {
-	kernel             *kernel
-	id                 string
-	name               string
-	basePath           string
-	filesystem         afero.Fs
-	status             BundleStatus
-	sandbox            *goja.Runtime
-	adapter            *securityProxy
-	privileges         []string
-	privileged         bool
-	modules            []*module
-	propertyDescriptor get_property
-	freezer            func(object *goja.Object)
-	null               JsValue
-	undefined          JsValue
-	loaderStack        []string
+	kernel      *kernel
+	id          string
+	name        string
+	basePath    string
+	filesystem  afero.Fs
+	status      BundleStatus
+	sandbox     Sandbox
+	privileges  []string
+	privileged  bool
+	modules     []*module
+	loaderStack []string
 }
 
 func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name string, privileges []string) (*bundle, error) {
-	sandbox := goja.New()
-
 	bundle := &bundle{
 		kernel:      kernel,
 		id:          id,
@@ -38,50 +30,34 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 		privileges:  privileges,
 		basePath:    basePath,
 		filesystem:  filesystem,
-		sandbox:     sandbox,
 		loaderStack: make([]string, 0),
 	}
 
+	bundle.sandbox = kernel.sandboxFactory(bundle)
+
 	bundle.setBundleStatus(BundleStatusInstalled)
 
-	system := sandbox.NewObject()
-	sandbox.Set("System", system)
-	register := sandbox.NewNamedNativeFunction("<module-init>", bundle.__systemRegister)
-	err := system.DefineDataProperty("register", register, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
-	if err != nil {
-		return nil, err
-	}
+	builder := bundle.NewObjectBuilder("")
+	builder.DefineGoFunction("<module-init>", "register", bundle.__systemRegister)
+	builder.BuildInto("System", bundle.sandbox.Global())
 
 	return bundle, nil
 }
 
 func (b *bundle) init(kernel *kernel) error {
-	adapter, err := newSecurityProxy(b)
-	if err != nil {
-		return errors.New(err)
-	}
-
-	sandbox := b.Sandbox()
-	b.null = newJsValue(goja.Null(), b)
-	b.undefined = newJsValue(goja.Undefined(), b)
-	b.propertyDescriptor = preparePropertyDescriptor(sandbox)
-	b.freezer = prepareDeepFreeze(sandbox)
-
 	if err := kernel.bundleManager.registerDefaults(b); err != nil {
 		return err
 	}
 
-	b.adapter = adapter
-
 	return nil
 }
 
-func (b *bundle) Null() JsValue {
-	return b.null
+func (b *bundle) Null() Value {
+	return b.sandbox.NullValue()
 }
 
-func (b *bundle) Undefined() JsValue {
-	return b.undefined
+func (b *bundle) Undefined() Value {
+	return b.sandbox.UndefinedValue()
 }
 
 func (b *bundle) Filesystem() afero.Fs {
@@ -121,20 +97,20 @@ func (b *bundle) findModuleById(id string) *module {
 	return nil
 }
 
-func (b *bundle) Export(value goja.Value, target Any) error {
-	return b.sandbox.ExportTo(value, target)
+func (b *bundle) Export(value Value, target Any) error {
+	return b.sandbox.Export(value, target)
 }
 
-func (b *bundle) ToValue(value Any) JsValue {
-	return newJsValue(b.sandbox.ToValue(value), b)
+func (b *bundle) ToValue(value Any) Value {
+	return b.sandbox.ToValue(value)
 }
 
-func (b *bundle) FreezeObject(object *goja.Object) {
-	__freezeObject(b.sandbox.ToValue(object), b.sandbox)
+func (b *bundle) FreezeObject(object Object) {
+	object.Freeze()
 }
 
-func (b *bundle) DeepFreezeObject(object *goja.Object) {
-	b.freezer(object)
+func (b *bundle) DeepFreezeObject(object Object) {
+	object.DeepFreeze()
 }
 
 func (b *bundle) ID() string {
@@ -160,25 +136,20 @@ func (b *bundle) SecurityInterceptor() SecurityInterceptor {
 	}
 }
 
-func (b *bundle) Sandbox() *goja.Runtime {
+func (b *bundle) Sandbox() Sandbox {
 	return b.sandbox
 }
 
-func (b *bundle) NewTypeError(args ...Any) JsValue {
-	err := b.Sandbox().NewTypeError(args)
-	return newJsValue(err, b)
+func (b *bundle) NewTypeError(args ...Any) Value {
+	return b.sandbox.NewTypeError(args)
 }
 
-func (b *bundle) NewObjectBuilder(objectName string) BundleObjectBuilder {
-	return BundleObjectBuilder(newObjectCreator(objectName, nil, b))
+func (b *bundle) NewObjectBuilder(objectName string) ObjectCreator {
+	return b.sandbox.NewObjectCreator(objectName)
 }
 
 func (b *bundle) getBasePath() string {
 	return b.basePath
-}
-
-func (b *bundle) getSecurityProxy() *securityProxy {
-	return b.adapter
 }
 
 func (b *bundle) setBundleStatus(status BundleStatus) {
@@ -186,12 +157,12 @@ func (b *bundle) setBundleStatus(status BundleStatus) {
 	log.Infof("Bundle: Status of '%s' changed to %s", b.Name(), status)
 }
 
-func (b *bundle) NewObject() *goja.Object {
+func (b *bundle) NewObject() Object {
 	return b.sandbox.NewObject()
 }
 
-func (b *bundle) NewException(err error) *goja.Object {
-	return b.sandbox.NewGoError(err)
+func (b *bundle) NewException(err error) Object {
+	return b.sandbox.NewError(err)
 }
 
 func (b *bundle) addModule(module *module) {
@@ -229,7 +200,7 @@ func (b *bundle) peekLoaderStack() string {
 	return b.loaderStack[len(b.loaderStack)-1]
 }
 
-func (b *bundle) __systemRegister(call goja.FunctionCall) goja.Value {
+func (b *bundle) __systemRegister(call FunctionCall) Value {
 	var module *module = nil
 	if len(b.loaderStack) > 0 {
 		moduleId := b.peekLoaderStack()
@@ -250,7 +221,7 @@ func (b *bundle) __systemRegister(call goja.FunctionCall) goja.Value {
 	}
 
 	argument = call.Argument(argIndex)
-	if !isArray(argument) {
+	if !argument.IsArray() {
 		panic(errors.New("neither string (name) or array (dependencies) was passed as the first parameter"))
 	}
 	argIndex++
@@ -262,7 +233,7 @@ func (b *bundle) __systemRegister(call goja.FunctionCall) goja.Value {
 	}
 
 	var callback registerCallback
-	err := b.sandbox.ExportTo(call.Argument(argIndex), &callback)
+	err := b.sandbox.Export(call.Argument(argIndex), &callback)
 	if err != nil {
 		panic(err)
 	}
@@ -272,5 +243,5 @@ func (b *bundle) __systemRegister(call goja.FunctionCall) goja.Value {
 		panic(err)
 	}
 
-	return goja.Undefined()
+	return b.Null()
 }

@@ -1,7 +1,6 @@
 package gomini
 
 import (
-	"github.com/dop251/goja"
 	"github.com/satori/go.uuid"
 	"github.com/go-errors/errors"
 	"path/filepath"
@@ -38,7 +37,7 @@ type module struct {
 	name    string
 	origin  Origin
 	bundle  Bundle
-	exports *goja.Object
+	exports Object
 	kernel  bool
 }
 
@@ -56,7 +55,7 @@ func newModule(moduleId, name string, origin Origin, bundle Bundle) (*module, er
 		name:    name,
 		origin:  origin,
 		bundle:  bundle,
-		exports: bundle.NewObject(),
+		exports: bundle.Sandbox().NewObject(),
 	}
 
 	return module, nil
@@ -78,12 +77,16 @@ func (m *module) Bundle() Bundle {
 	return m.bundle
 }
 
-func (m *module) getModuleExports() *goja.Object {
+func (m *module) IsAccessible(caller Bundle) error {
+	return m.bundle.Sandbox().IsAccessible(m, caller)
+}
+
+func (m *module) getModuleExports() Object {
 	return m.exports
 }
 
-func (m *module) export(value goja.Value, target Any) error {
-	return m.bundle.Sandbox().ExportTo(value, target)
+func (m *module) export(value Value, target Any) error {
+	return m.bundle.Sandbox().Export(value, target)
 }
 
 func (m *module) setName(name string) {

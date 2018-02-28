@@ -1,7 +1,6 @@
 package gomini
 
 import (
-	"github.com/dop251/goja"
 	"path/filepath"
 	"os"
 	"encoding/json"
@@ -14,7 +13,7 @@ const cacheJsonFile = "cache.json"
 const cacheVfsPath = "/kernel/cache"
 
 type transpiler struct {
-	runtime           *goja.Runtime
+	sandbox           Sandbox
 	kernel            *kernel
 	transpilerVersion string
 	transpilerCache   *transpilerCache
@@ -36,7 +35,7 @@ func newTranspiler(kernel *kernel) (*transpiler, error) {
 	}
 
 	transpiler := &transpiler{
-		runtime:         nil,
+		sandbox:         nil,
 		kernel:          kernel,
 		transpilerCache: cache,
 	}
@@ -131,8 +130,8 @@ func (t *transpiler) transpileAll(bundle Bundle, root string) error {
 	}
 
 	// Remove transpiler from memory to free up some space
-	if t.runtime != nil {
-		t.runtime = nil
+	if t.sandbox != nil {
+		t.sandbox = nil
 		runtime.GC()
 	}
 
