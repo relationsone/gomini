@@ -8,6 +8,13 @@ import (
 	"github.com/spf13/afero"
 )
 
+const bannerLarge = `       __           __  _                                _      _       
+  ___ / /____ _____/ /_(_)__  ___ _     ___ ____  __ _  (_)__  (_)
+ (_-</ __/ _ \/ __/ __/ / _ \/ _ \/    / _ \/ _ \/  ' \/ / _ \/ /   _ _ _ 
+/___/\__/\_,_/_/  \__/_/_//_/\_, /     \_, /\___/_/_/_/_/_//_/_/   (_|_|_)
+                            /___/     /___/
+`
+
 func fileExists(filesystem afero.Fs, filename string) bool {
 	if _, err := filesystem.Stat(filename); err != nil {
 		if os.IsNotExist(err) {
