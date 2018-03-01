@@ -51,15 +51,11 @@ func loadPlainJavascript(kernel *kernel, filename string, loader, target Bundle)
 	if prog, err := kernel.loadScriptSource(scriptPath, true); err != nil {
 		return nil, err
 	} else {
-		return executeJavascript(prog, target)
+		return target.Sandbox().Execute(prog)
 	}
 }
 
 func tsCacheFilename(path string, bundle Bundle, kernel *kernel) string {
 	kernelBasedPath := kernel.toKernelPath(path, bundle)
 	return hash(kernelBasedPath)
-}
-
-func executeJavascript(prog Script, bundle Bundle) (Value, error) {
-	return bundle.Sandbox().Execute(prog)
 }

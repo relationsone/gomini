@@ -184,7 +184,7 @@ func (k *kernel) loadScriptModule(id, name, parentPath string, scriptPath *resol
 	bundle.pushLoaderStack(id)
 
 	// We expect a cleanly compiled module, that doesn't return anything
-	val, err := executeJavascript(prog, bundle)
+	val, err := bundle.Sandbox().Execute(prog)
 
 	bundle.popLoaderStack()
 
