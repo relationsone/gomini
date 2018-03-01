@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"github.com/spf13/afero"
 	"github.com/apex/log"
+	"github.com/efarrer/iothrottler"
 )
 
 type bundle struct {
@@ -20,6 +21,7 @@ type bundle struct {
 	privileged  bool
 	modules     []*module
 	loaderStack []string
+	ioPool      *iothrottler.IOThrottlerPool
 }
 
 func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name string, privileges []string) (*bundle, error) {
@@ -31,6 +33,8 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 		basePath:    basePath,
 		filesystem:  filesystem,
 		loaderStack: make([]string, 0),
+		// TODO Add IO throttling using bundle#ioPool
+		// ioPool: iothrottler.NewIOThrottlerPool(iothrottler.BytesPerSecond * 1000),
 	}
 
 	bundle.sandbox = kernel.sandboxFactory(bundle)
