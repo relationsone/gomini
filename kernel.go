@@ -34,7 +34,6 @@ type kernel struct {
 }
 
 func NewScriptKernel(osfs, bundlefs afero.Fs, sandboxFactory SandboxFactory, apiBinders []ApiProviderBinder) (*kernel, error) {
-	//log.Infof("Gomini is starting...")
 	for _, line := range strings.Split(bannerLarge, "\n") {
 		log.Info(line)
 	}
