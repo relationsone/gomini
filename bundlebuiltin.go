@@ -46,3 +46,23 @@ func timeoutApi() ApiProviderBinder {
 		})
 	}
 }
+
+var emptyStackFrame = _emptyStackFrame{}
+
+type _emptyStackFrame struct{}
+
+func (_emptyStackFrame) Position() Position {
+	return Position{0, 0}
+}
+
+func (_emptyStackFrame) SrcName() string {
+	return "<native>"
+}
+
+func (_emptyStackFrame) FuncName() string {
+	return "<native>"
+}
+
+func (_emptyStackFrame) String() string {
+	return "native"
+}

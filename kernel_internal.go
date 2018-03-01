@@ -115,23 +115,3 @@ func (k *kernel) __toVirtualKernelFile(scriptPath *resolvedScriptPath) (bool, *k
 	}
 	return false, nil, nil
 }
-
-var emptyStackFrame = _emptyStackFrame{}
-
-type _emptyStackFrame struct{}
-
-func (_emptyStackFrame) Position() Position {
-	return Position{0, 0}
-}
-
-func (_emptyStackFrame) SrcName() string {
-	return "<native>"
-}
-
-func (_emptyStackFrame) FuncName() string {
-	return "<native>"
-}
-
-func (_emptyStackFrame) String() string {
-	return "native"
-}
