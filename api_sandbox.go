@@ -16,7 +16,7 @@ type Sandbox interface {
 	// given parent when ObjectCreator::BuildInto is called.
 	NewObjectCreator(objectName string) ObjectCreator
 	NewNamedNativeFunction(functionName string, function GoFunction) Value
-	NewTypeError(args ...Any) Object
+	NewTypeError(args ...interface{}) Object
 	NewError(err error) Object
 
 	NewModuleProxy(object Object, objectName string, caller Bundle) (Object, error)
@@ -31,7 +31,7 @@ type Sandbox interface {
 	NullValue() Value
 	UndefinedValue() Value
 
-	ToValue(value Any) Value
+	ToValue(value interface{}) Value
 	Export(value Value, target interface{}) error
 }
 
@@ -44,26 +44,6 @@ type StackFrame interface {
 
 type Position struct {
 	Line, Col int
-}
-
-var EmptyStackFrame = emptyStackFrame{}
-
-type emptyStackFrame struct{}
-
-func (emptyStackFrame) Position() Position {
-	return Position{0, 0}
-}
-
-func (emptyStackFrame) SrcName() string {
-	return "<native>"
-}
-
-func (emptyStackFrame) FuncName() string {
-	return "<native>"
-}
-
-func (emptyStackFrame) String() string {
-	return "native"
 }
 
 type Script interface {
@@ -79,8 +59,8 @@ func (f FunctionCall) Argument(idx int) Value {
 	return f.Arguments[idx]
 }
 
-type Getter func() (value Any)
-type Setter func(value Any)
+type Getter func() (value interface{})
+type Setter func(value interface{})
 
 type NativeFunction func(call FunctionCall) Value
 type GoFunction interface{}
@@ -97,7 +77,7 @@ const (
 )
 
 type PropertyDescriptor struct {
-	Original Any
+	Original interface{}
 
 	Value Value
 
@@ -131,7 +111,7 @@ type Value interface {
 	IsArray() bool
 	IsDefined() bool
 
-	Unwrap() Any
+	Unwrap() interface{}
 }
 
 type Object interface {
@@ -145,8 +125,8 @@ type Object interface {
 
 	DefineFunction(functionName, propertyName string, function NativeFunction) Object
 	DefineGoFunction(functionName, propertyName string, function GoFunction) Object
-	DefineConstant(constantName string, value Any) Object
-	DefineSimpleProperty(propertyName string, value Any) Object
+	DefineConstant(constantName string, value interface{}) Object
+	DefineSimpleProperty(propertyName string, value interface{}) Object
 	DefineObjectProperty(objectName string, objectBinder ObjectBinder) Object
 	DefineAccessorProperty(propertyName string, getter Getter, setter Setter) Object
 }
@@ -154,8 +134,8 @@ type Object interface {
 type ObjectBuilder interface {
 	DefineFunction(functionName, propertyName string, function NativeFunction) ObjectBuilder
 	DefineGoFunction(functionName, propertyName string, function GoFunction) ObjectBuilder
-	DefineConstant(constantName string, value Any) ObjectBuilder
-	DefineSimpleProperty(propertyName string, value Any) ObjectBuilder
+	DefineConstant(constantName string, value interface{}) ObjectBuilder
+	DefineSimpleProperty(propertyName string, value interface{}) ObjectBuilder
 	DefineObjectProperty(objectName string, objectBinder ObjectBinder) ObjectBuilder
 	DefineAccessorProperty(propertyName string, getter Getter, setter Setter) ObjectBuilder
 }

@@ -59,7 +59,7 @@ func (bm *bundleManager) __createBundleFilesystem(path string, info os.FileInfo)
 }
 
 func (bm *bundleManager) __bindModuleToKernelSyscall(module Module) KernelSyscall {
-	return func(caller Bundle) Any {
+	return func(caller Bundle) interface{} {
 		return module
 	}
 }

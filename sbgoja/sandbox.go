@@ -77,7 +77,7 @@ func (s *sandbox) NewNamedNativeFunction(functionName string, function gomini.Go
 	return newJsValue(s.runtime.NewNamedNativeFunction(functionName, function), s)
 }
 
-func (s *sandbox) NewTypeError(args ...gomini.Any) gomini.Object {
+func (s *sandbox) NewTypeError(args ...interface{}) gomini.Object {
 	return newJsObject(s.runtime.NewTypeError(args), s)
 }
 
@@ -147,7 +147,7 @@ func (s *sandbox) Global() gomini.Object {
 	return s.global
 }
 
-func (s *sandbox) ToValue(value gomini.Any) gomini.Value {
+func (s *sandbox) ToValue(value interface{}) gomini.Value {
 	return newJsValue(s.runtime.ToValue(value), s)
 }
 
@@ -248,7 +248,7 @@ func isDefined(value gomini.Value) bool {
 	return v != goja.Undefined() && v != goja.Null()
 }
 
-func unwrapValue(value gomini.Any) gomini.Any {
+func unwrapValue(value interface{}) interface{} {
 	x := reflect.ValueOf(value)
 	switch x.Kind() {
 	case reflect.String:

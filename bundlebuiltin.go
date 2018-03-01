@@ -18,7 +18,7 @@ func consoleApi() ApiProviderBinder {
 					}
 				}
 				if &frame == nil {
-					frame = EmptyStackFrame
+					frame = emptyStackFrame
 				}
 				pos := frame.Position()
 				msg := call.Argument(0)

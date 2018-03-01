@@ -35,7 +35,7 @@ func (t *transpiler) __initialize() {
 		})
 
 		builder := t.sandbox.NewObjectCreator("console")
-		builder.DefineGoFunction("log", "log", func(msg Any) {
+		builder.DefineGoFunction("log", "log", func(msg interface{}) {
 			stackFrames := t.sandbox.CaptureCallStack(2)
 			frame := stackFrames[1]
 			pos := frame.Position()

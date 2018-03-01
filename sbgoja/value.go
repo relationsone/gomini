@@ -92,7 +92,7 @@ func (v *_value) IsDefined() bool {
 	return isDefined(v)
 }
 
-func (v *_value) Unwrap() gomini.Any {
+func (v *_value) Unwrap() interface{} {
 	return v.unwrap()
 }
 

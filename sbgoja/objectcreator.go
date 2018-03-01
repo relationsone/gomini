@@ -10,19 +10,19 @@ import (
 type functionDefinition struct {
 	propertyName string
 	functionName string
-	function     gomini.Any
+	function     interface{}
 }
 
 type propertyDefinition struct {
 	propertyName string
-	value        gomini.Any
+	value        interface{}
 	getter       gomini.Getter
 	setter       gomini.Setter
 }
 
 type constantDefinition struct {
 	constantName string
-	value        gomini.Any
+	value        interface{}
 }
 
 type objectDefinition struct {
@@ -86,7 +86,7 @@ func (oc *objectCreator) DefineGoFunction(functionName, propertyName string, fun
 	panic(errors.New("illegal _value passed to DefineGoFunction"))
 }
 
-func (oc *objectCreator) DefineConstant(constantName string, value gomini.Any) gomini.ObjectBuilder {
+func (oc *objectCreator) DefineConstant(constantName string, value interface{}) gomini.ObjectBuilder {
 	oc.constants = append(oc.constants, &constantDefinition{
 		constantName: constantName,
 		value:        value,
@@ -94,7 +94,7 @@ func (oc *objectCreator) DefineConstant(constantName string, value gomini.Any) g
 	return oc
 }
 
-func (oc *objectCreator) DefineSimpleProperty(propertyName string, value gomini.Any) gomini.ObjectBuilder {
+func (oc *objectCreator) DefineSimpleProperty(propertyName string, value interface{}) gomini.ObjectBuilder {
 	oc.properties = append(oc.properties, &propertyDefinition{
 		propertyName: propertyName,
 		value:        value,

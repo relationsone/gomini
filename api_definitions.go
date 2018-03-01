@@ -31,7 +31,7 @@ type Module interface {
 
 	IsAccessible(caller Bundle) error
 
-	export(value Value, target Any) error
+	export(value Value, target interface{}) error
 	getModuleExports() Object
 	setName(name string)
 }

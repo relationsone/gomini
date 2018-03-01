@@ -101,11 +101,11 @@ func (b *bundle) findModuleById(id string) *module {
 	return nil
 }
 
-func (b *bundle) Export(value Value, target Any) error {
+func (b *bundle) Export(value Value, target interface{}) error {
 	return b.sandbox.Export(value, target)
 }
 
-func (b *bundle) ToValue(value Any) Value {
+func (b *bundle) ToValue(value interface{}) Value {
 	return b.sandbox.ToValue(value)
 }
 
@@ -144,7 +144,7 @@ func (b *bundle) Sandbox() Sandbox {
 	return b.sandbox
 }
 
-func (b *bundle) NewTypeError(args ...Any) Value {
+func (b *bundle) NewTypeError(args ...interface{}) Value {
 	return b.sandbox.NewTypeError(args)
 }
 

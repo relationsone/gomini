@@ -45,7 +45,7 @@ type Bundle interface {
 	Privileged() bool
 	Privileges() []string
 	SecurityInterceptor() SecurityInterceptor
-	Export(value Value, target Any) error
+	Export(value Value, target interface{}) error
 	Status() BundleStatus
 	Filesystem() afero.Fs
 
@@ -55,10 +55,10 @@ type Bundle interface {
 	NewObjectBuilder(objectName string) ObjectCreator
 	NewObject() Object
 	NewException(err error) Object
-	ToValue(value Any) Value
+	ToValue(value interface{}) Value
 	FreezeObject(object Object)
 	DeepFreezeObject(object Object)
-	NewTypeError(args ...Any) Value
+	NewTypeError(args ...interface{}) Value
 	Sandbox() Sandbox
 
 	findModuleById(id string) *module

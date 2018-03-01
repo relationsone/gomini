@@ -85,7 +85,7 @@ func (m *module) getModuleExports() Object {
 	return m.exports
 }
 
-func (m *module) export(value Value, target Any) error {
+func (m *module) export(value Value, target interface{}) error {
 	return m.bundle.Sandbox().Export(value, target)
 }
 

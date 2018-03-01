@@ -84,7 +84,7 @@ func (o *_object) DefineGoFunction(functionName, propertyName string, function g
 	panic(errors.New("illegal _value passed to DefineGoFunction"))
 }
 
-func (o *_object) defineFunction(functionName, propertyName string, function gomini.Any) gomini.Object {
+func (o *_object) defineFunction(functionName, propertyName string, function interface{}) gomini.Object {
 	obj, ok := o.unwrap().(*goja.Object)
 	if !ok {
 		panic(errors.New("not an _object"))
@@ -96,7 +96,7 @@ func (o *_object) defineFunction(functionName, propertyName string, function gom
 	return o
 }
 
-func (o *_object) DefineConstant(constantName string, value gomini.Any) gomini.Object {
+func (o *_object) DefineConstant(constantName string, value interface{}) gomini.Object {
 	obj, ok := o.unwrap().(*goja.Object)
 	if !ok {
 		panic(errors.New("not an _object"))
@@ -109,7 +109,7 @@ func (o *_object) DefineConstant(constantName string, value gomini.Any) gomini.O
 	return o
 }
 
-func (o *_object) DefineSimpleProperty(propertyName string, value gomini.Any) gomini.Object {
+func (o *_object) DefineSimpleProperty(propertyName string, value interface{}) gomini.Object {
 	obj, ok := o.unwrap().(*goja.Object)
 	if !ok {
 		panic(errors.New("not an _object"))

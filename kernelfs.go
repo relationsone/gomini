@@ -23,10 +23,9 @@ func IsKernelFile(filesystem afero.Fs, name string) bool {
 	return ok
 }
 
+type Any interface{}
 
-type Any interface {}
-
-type KernelSyscall func(caller Bundle) Any
+type KernelSyscall func(caller Bundle) interface{}
 
 type kernelFs struct {
 	root *kernelFile
