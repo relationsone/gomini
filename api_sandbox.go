@@ -4,8 +4,6 @@ import (
 	"reflect"
 )
 
-type SandboxFactory func(bundle Bundle) Sandbox
-
 type Sandbox interface {
 	NewObject() Object
 

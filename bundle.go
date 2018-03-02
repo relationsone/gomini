@@ -37,7 +37,7 @@ func newBundle(kernel *kernel, basePath string, filesystem afero.Fs, id, name st
 		// ioPool: iothrottler.NewIOThrottlerPool(iothrottler.BytesPerSecond * 1000),
 	}
 
-	bundle.sandbox = kernel.sandboxFactory(bundle)
+	bundle.sandbox = kernel.kernelConfig.NewSandbox(bundle)
 
 	bundle.setBundleStatus(BundleStatusInstalled)
 
@@ -236,7 +236,7 @@ func (b *bundle) __systemRegister(call FunctionCall) Value {
 		dependencies[i] = deps[i].(string)
 	}
 
-	var callback registerCallback
+	var callback func(export func(name string, value Value), context Object) Object
 	err := b.sandbox.Export(call.Argument(argIndex), &callback)
 	if err != nil {
 		panic(err)

@@ -2,6 +2,7 @@ package gomini
 
 import (
 	"github.com/spf13/afero"
+	"os"
 )
 
 type BundleStatus int
@@ -37,6 +38,15 @@ func (b BundleStatus) String() string {
 		return "FAILED"
 	}
 	panic("illegal bundle status")
+}
+
+type BundleFilesystemConfig struct {
+	kernelFilesystem    afero.Fs
+	appPath             string
+	appInfo             os.FileInfo
+	writableSection     bool
+	keyManager          KeyManager
+	NewModuleFilesystem func() (afero.Fs, error)
 }
 
 type Bundle interface {

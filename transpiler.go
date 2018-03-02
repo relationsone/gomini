@@ -10,7 +10,6 @@ import (
 )
 
 const cacheJsonFile = "cache.json"
-const cacheVfsPath = "/kernel/cache"
 
 type transpiler struct {
 	sandbox           Sandbox
@@ -22,7 +21,7 @@ type transpiler struct {
 func newTranspiler(kernel *kernel) (*transpiler, error) {
 	var cache *transpilerCache
 
-	cacheFile := filepath.Join(cacheVfsPath, cacheJsonFile)
+	cacheFile := filepath.Join(KernelVfsCachePath, cacheJsonFile)
 	if file, err := afero.ReadFile(kernel.Filesystem(), cacheFile); err == nil {
 		json.Unmarshal(file, &cache)
 	}
@@ -51,7 +50,7 @@ func (t *transpiler) transpileFile(bundle Bundle, path string) (*string, error) 
 		path = p
 	}
 
-	cacheFile := filepath.Join(cacheVfsPath, tsCacheFilename(path, bundle, t.kernel))
+	cacheFile := filepath.Join(KernelVfsCachePath, tsCacheFilename(path, bundle, t.kernel))
 
 	// Load typescript file content
 	data, err := t.kernel.loadContent(bundle, bundle.Filesystem(), path)

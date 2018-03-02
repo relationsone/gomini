@@ -11,44 +11,54 @@ import (
 	"bytes"
 	"github.com/satori/go.uuid"
 	"github.com/spf13/afero"
-	"github.com/relationsone/bacc"
 	"github.com/apex/log"
 )
 
-const kernel_id = "76141a6c-0aec-4973-b04b-8fdd54753e03"
+const kernelId = "76141a6c-0aec-4973-b04b-8fdd54753e03"
 
-type registerCallback func(export func(name string, value Value), context Object) Object
-
-/*
- The kernel is a special bundle type, which is the root bundle to be initialized and has
- all privileges (PRIVILEGE_KERNEL) and can leave bundle boundaries.
- */
 type kernel struct {
 	*bundle
-	osfs           afero.Fs
 	bundleManager  *bundleManager
-	keyManager     bacc.KeyManager
+	keyManager     KeyManager
+	kernelConfig   KernelConfig
 	resourceLoader ResourceLoader
-	sandboxFactory SandboxFactory
 	scriptCache    map[string]Script
 }
 
-func NewScriptKernel(osfs, bundlefs afero.Fs, sandboxFactory SandboxFactory, apiBinders []ApiProviderBinder) (*kernel, error) {
+func New(kernelConfig KernelConfig) (Kernel, error) {
+	if kernelConfig.NewKernelFilesystem == nil {
+		return nil, errors.New("no NewKernelFilesystem function defined")
+	}
+	if kernelConfig.NewBundleFilesystem == nil {
+		kernelConfig.NewBundleFilesystem = __defaultNewBundleFilesystem
+	}
+	if kernelConfig.NewSandbox == nil {
+		return nil, errors.New("no NewSandbox function defined")
+	}
+	if kernelConfig.BundleApiProviders == nil {
+		kernelConfig.BundleApiProviders = []ApiProviderBinder{}
+	}
+
 	for _, line := range strings.Split(bannerLarge, "\n") {
 		log.Info(line)
 	}
 
 	kernel := &kernel{
-		osfs:           osfs,
+		kernelConfig:   kernelConfig,
 		resourceLoader: newResourceLoader(),
-		sandboxFactory: sandboxFactory,
 		scriptCache:    make(map[string]Script),
 	}
 
+	apiBinders := kernelConfig.BundleApiProviders
 	apiBinders = append(apiBinders, consoleApi(), timeoutApi())
 
 	kernel.bundleManager = newBundleManager(kernel, apiBinders)
-	bundle, err := newBundle(kernel, "/", bundlefs, kernel_id, "kernel", []string{})
+
+	kernelfs, err := kernelConfig.NewKernelFilesystem(afero.NewOsFs())
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := newBundle(kernel, "/", kernelfs, kernelId, "kernel", []string{})
 	if err != nil {
 		return nil, err
 	}
@@ -72,11 +82,28 @@ func NewScriptKernel(osfs, bundlefs afero.Fs, sandboxFactory SandboxFactory, api
 		}
 	}
 
+	// Load all defined (bundled) kernel modules
+	for _, kernelModule := range kernelConfig.KernelModules {
+		if err := kernel.loadKernelModule(kernelModule); err != nil {
+			return nil, err
+		}
+	}
+
 	return kernel, nil
 }
 
-func (k *kernel) Start() error {
+func (k *kernel) Start(entryPoint string) error {
+	if err := k.entryPoint(entryPoint); err != nil {
+		return err
+	}
 	if err := k.bundleManager.start(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (k *kernel) Stop() error {
+	if err := k.bundleManager.stop(); err != nil {
 		return err
 	}
 	return nil
@@ -106,10 +133,36 @@ func (k *kernel) SecurityInterceptor() SecurityInterceptor {
 	}
 }
 
-func (k *kernel) LoadKernelModule(kernelModule KernelModule) error {
-	scriptPath := k.resolveScriptPath(k, kernelModule.ApiDefinitionFile())
+// EntryPoint loads a JavaScript (*.js) or TypeScript (*.ts) file
+// to initialize fundamental kernel functionality.
+func (k *kernel) entryPoint(filename string) error {
+	k.setBundleStatus(BundleStatusStarting)
+	id, err := uuid.NewV4()
 
-	origin := newOrigin(scriptPath.path)
+	if err != nil {
+		return err
+	}
+
+	if filename != "" {
+		_, err = k.loadScriptModule(id.String(), "entrypoint", "/", &resolvedScriptPath{filename, k.bundle}, k.bundle)
+		if err != nil {
+			return err
+		}
+	}
+
+	k.setBundleStatus(BundleStatusStarted)
+	return nil
+}
+
+// LoadKernelModule loads the given KernelModule into the current
+// kernel instance and activates access to the implementation
+// of that specific KernelModule.
+func (k *kernel) loadKernelModule(kernelModule KernelModule) error {
+	scriptPath := filepath.Join(KernelVfsTypesPath, kernelModule.Name()+".d.ts")
+
+	log.Infof("Kernel: Loading kernel module: %s (kernel:/%s)", kernelModule.Name(), scriptPath)
+
+	origin := newOrigin(scriptPath)
 	module, err := newModule(kernelModule.ID(), kernelModule.Name(), origin, k)
 	if err != nil {
 		return err
@@ -127,23 +180,8 @@ func (k *kernel) LoadKernelModule(kernelModule KernelModule) error {
 	return nil
 }
 
-func (k *kernel) EntryPoint(filename string) error {
-	k.setBundleStatus(BundleStatusStarting)
-	id, err := uuid.NewV4()
-	if err != nil {
-		return err
-	}
-
-	_, err = k.loadScriptModule(id.String(), "entrypoint", "/", &resolvedScriptPath{filename, k.bundle}, k.bundle)
-	if err != nil {
-		return err
-	}
-
-	k.setBundleStatus(BundleStatusStarted)
-	return nil
-}
-
 func (k *kernel) defineKernelModule(module Module, filename string, exporter func(exports Object)) {
+	// TODO: Remove loading the actual types file as transpilation doesn't make sense here, API's all defined using golang code
 	// Load the script definition file
 	_, err := k.loadScriptModule(module.ID(), module.Name(), "/", &resolvedScriptPath{filename, k.bundle}, k.bundle)
 	if err != nil {
@@ -221,7 +259,7 @@ func (k *kernel) loadContent(bundle Bundle, filesystem afero.Fs, filename string
 	return b, nil
 }
 
-func (k *kernel) registerModule(module *module, dependencies []string, callback registerCallback, bundle *bundle) error {
+func (k *kernel) registerModule(module *module, dependencies []string, callback func(export func(name string, value Value), context Object) Object, bundle *bundle) error {
 	log.Debugf("Kernel: Loading module %s (%s) into bundle %s (%s)", module.Name(), module.ID(), bundle.Name(), bundle.ID())
 
 	exportFunction := func(name string, value Value) {
@@ -355,7 +393,7 @@ func (k *kernel) resolveScriptPath(bundle Bundle, filename string) *resolvedScri
 		!strings.HasPrefix(filename, "../") &&
 		!strings.HasPrefix(filename, "/") {
 
-		filename = filepath.Join("/kernel/@types", filename)
+		filename = filepath.Join(KernelVfsTypesPath, filename)
 	}
 
 	parent := "/"

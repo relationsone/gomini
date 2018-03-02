@@ -61,7 +61,7 @@ func (k *kernel) __resolveDependencyModule(dependency string, bundle *bundle, mo
 func (k *kernel) __loadSource(bundle Bundle, filename string) (string, error) {
 	if isTypeScript(filename) {
 		// Is pre-transpiled?
-		cacheFilename := filepath.Join(cacheVfsPath, tsCacheFilename(filename, bundle, k))
+		cacheFilename := filepath.Join(KernelVfsCachePath, tsCacheFilename(filename, bundle, k))
 		if !fileExists(k.Filesystem(), cacheFilename) {
 			log.Debugf("Kernel: Loading scriptfile '%s:/%s' with live transpiler", bundle.Name(), filename)
 

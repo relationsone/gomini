@@ -9,8 +9,6 @@ import (
 )
 
 const (
-	appsPath = "/kernel/apps"
-
 	bundleJson = "bundle.json"
 	jsPromise  = "/js/kernel/promise.js"
 )
@@ -35,8 +33,8 @@ func (bm *bundleManager) start() error {
 		return err
 	}
 
-	return afero.Walk(bm.kernel.filesystem, appsPath, func(path string, info os.FileInfo, err error) error {
-		if path == appsPath {
+	return afero.Walk(bm.kernel.filesystem, KernelVfsAppsPath, func(path string, info os.FileInfo, err error) error {
+		if path == KernelVfsAppsPath {
 			return nil
 		}
 
@@ -61,6 +59,11 @@ func (bm *bundleManager) start() error {
 		}
 		return nil
 	})
+}
+
+func (bm *bundleManager) stop() error {
+	// TODO: bundleManager needs to be able to be stopped
+	return nil
 }
 
 func (bm *bundleManager) registerDefaults(bundle Bundle) error {

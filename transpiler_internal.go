@@ -26,7 +26,7 @@ func (t *transpiler) __initialize() {
 	if t.sandbox == nil {
 		log.Info("Transpiler: Setting up TypeScript transpiler...")
 
-		t.sandbox = t.kernel.sandboxFactory(t.kernel)
+		t.sandbox = t.kernel.kernelConfig.NewSandbox(t.kernel)
 		t.sandbox.Global().DefineFunction("tsVersion", "tsVersion", func(call FunctionCall) Value {
 			version := call.Argument(0).String()
 			log.Infof("Transpiler: Using bundled TypeScript v%s", version)
@@ -138,7 +138,7 @@ func (t *transpiler) __addTranspiledModule(path, cacheFile, code string, bundle 
 }
 
 func (t *transpiler) __storeModuleCacheInformation() error {
-	file := filepath.Join(cacheVfsPath, cacheJsonFile)
+	file := filepath.Join(KernelVfsCachePath, cacheJsonFile)
 	t.kernel.filesystem.Remove(file)
 	if data, err := json.Marshal(t.transpilerCache); err != nil {
 		return err

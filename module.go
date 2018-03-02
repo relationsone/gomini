@@ -1,7 +1,6 @@
 package gomini
 
 import (
-	"github.com/satori/go.uuid"
 	"github.com/go-errors/errors"
 	"path/filepath"
 )
@@ -43,11 +42,7 @@ type module struct {
 
 func newModule(moduleId, name string, origin Origin, bundle Bundle) (*module, error) {
 	if moduleId == "" {
-		id, err := uuid.NewV4()
-		if err != nil {
-			return nil, errors.New(err)
-		}
-		moduleId = id.String()
+		return nil, errors.New("illegal empty moduleId")
 	}
 
 	module := &module{
