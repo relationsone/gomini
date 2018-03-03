@@ -11,19 +11,26 @@ import (
 )
 
 var (
-	typeJsCallable           = reflect.TypeOf((*gomini.Callable)(nil)).Elem()
-	typeJsCallableArray      = reflect.TypeOf([]gomini.Callable{})
-	typeJsObject             = reflect.TypeOf((*gomini.Object)(nil)).Elem()
-	typeJsObjectArray        = reflect.TypeOf([]gomini.Object{})
-	typeJsValue              = reflect.TypeOf((*gomini.Value)(nil)).Elem()
-	typeJsValueArray         = reflect.TypeOf([]gomini.Value{})
+	typeJsCallable      = reflect.TypeOf((*gomini.Callable)(nil)).Elem()
+	typeJsCallableArray = reflect.TypeOf([]gomini.Callable{})
+
+	typeJsObject      = reflect.TypeOf((*gomini.Object)(nil)).Elem()
+	typeJsObjectArray = reflect.TypeOf([]gomini.Object{})
+
+	typeJsValue      = reflect.TypeOf((*gomini.Value)(nil)).Elem()
+	typeJsValueArray = reflect.TypeOf([]gomini.Value{})
+
 	typeGojaCallable         = reflect.TypeOf((*goja.Callable)(nil)).Elem()
 	typeGojaCallableExploded = reflect.TypeOf((*func(goja.Value, ...goja.Value) (goja.Value, error))(nil)).Elem()
-	typeGojaCallableArray    = reflect.TypeOf([]goja.Callable{})
-	typeGojaObject           = reflect.TypeOf(&goja.Object{})
-	typeGojaObjectArray      = reflect.TypeOf([]*goja.Object{})
-	typeGojaValue            = reflect.TypeOf((*goja.Value)(nil)).Elem()
-	typeGojaValueArray       = reflect.TypeOf([]goja.Value{})
+
+	typeGojaCallableArray         = reflect.TypeOf([]goja.Callable{})
+	typeGojaCallableArrayExploded = reflect.TypeOf([]func(goja.Value, ...goja.Value) (goja.Value, error){})
+
+	typeGojaObject      = reflect.TypeOf(&goja.Object{})
+	typeGojaObjectArray = reflect.TypeOf([]*goja.Object{})
+
+	typeGojaValue      = reflect.TypeOf((*goja.Value)(nil)).Elem()
+	typeGojaValueArray = reflect.TypeOf([]goja.Value{})
 )
 
 func NewSandbox(bundle gomini.Bundle) gomini.Sandbox {
@@ -216,7 +223,7 @@ func (s *sandbox) Export(value gomini.Value, target interface{}) error {
 		v.Set(reflect.ValueOf(newGojaCallableAdapter(callable, s)))
 
 	default:
-		switch value.ExportType().Kind() {
+		switch typ.Kind() {
 		case reflect.Func:
 			if err := adaptJsFunction(target, val, s); err != nil {
 				return err
