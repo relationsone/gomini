@@ -285,7 +285,7 @@ func unwrapGojaObject(value gomini.Object) *goja.Object {
 	if t, ok := value.Unwrap().(*goja.Object); ok {
 		return t
 	}
-	panic("illegal parameter, _value is not an _object")
+	panic("illegal parameter, value is not an object")
 }
 
 func adaptJsNativeFunction(function gomini.NativeFunction, sandbox *sandbox) func(goja.FunctionCall) goja.Value {
@@ -630,7 +630,7 @@ func adapterFunction(value reflect.Value, variadic bool, sandbox *sandbox) func(
 			default:
 				switch r.Type().Kind() {
 				case reflect.Func:
-					log.Debugf("Sandbox: Function return _value found: %s", r.String())
+					log.Debugf("Sandbox: Function return value found: %s", r.String())
 					ret[i] = reflect.ValueOf(makeAdapterFunction(r.Interface(), r, sandbox))
 				}
 			}
@@ -688,7 +688,7 @@ func prepareDeepFreeze(runtime *goja.Runtime) func(*goja.Object) {
 	        Object.getOwnPropertyNames(o).forEach(function (prop) {
     	        if (o.hasOwnProperty(prop)
         	        && o[prop] !== null
-            	    && (typeof o[prop] === "_object" || typeof o[prop] === "function")
+        	        && (typeof o[prop] === "object" || typeof o[prop] === "function")
                 	&& !Object.isFrozen(o[prop])) {
 	                deepFreeze(o[prop]);
     	        }

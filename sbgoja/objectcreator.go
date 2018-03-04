@@ -83,7 +83,7 @@ func (oc *objectCreator) DefineGoFunction(functionName, propertyName string, fun
 		}
 	}
 
-	panic(errors.New("illegal _value passed to DefineGoFunction"))
+	panic(errors.New("illegal value passed to DefineGoFunction"))
 }
 
 func (oc *objectCreator) DefineConstant(constantName string, value interface{}) gomini.ObjectBuilder {

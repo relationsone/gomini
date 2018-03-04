@@ -22,18 +22,12 @@ type _object struct {
 }
 
 func (o *_object) Get(name string) gomini.Value {
-	obj, ok := o.unwrap().(*goja.Object)
-	if !ok {
-		panic(errors.New("not an _object"))
-	}
+	obj := o.unwrap().(*goja.Object)
 	return newJsValue(obj.Get(name), o.sandbox)
 }
 
 func (o *_object) PropertyDescriptor(name string) gomini.PropertyDescriptor {
-	obj, ok := o.unwrap().(*goja.Object)
-	if !ok {
-		panic(errors.New("not an _object"))
-	}
+	obj := o.unwrap().(*goja.Object)
 	desc := obj.PropertyDescriptor(name)
 	return gomini.PropertyDescriptor{
 		Original:     desc,
@@ -81,26 +75,11 @@ func (o *_object) DefineGoFunction(functionName, propertyName string, function g
 		}
 	}
 
-	panic(errors.New("illegal _value passed to DefineGoFunction"))
-}
-
-func (o *_object) defineFunction(functionName, propertyName string, function interface{}) gomini.Object {
-	obj, ok := o.unwrap().(*goja.Object)
-	if !ok {
-		panic(errors.New("not an _object"))
-	}
-	f := o.sandbox.runtime.NewNamedNativeFunction(functionName, function)
-	if err := obj.DefineDataProperty(propertyName, f, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE); err != nil {
-		panic(err)
-	}
-	return o
+	panic(errors.New("illegal value passed to DefineGoFunction"))
 }
 
 func (o *_object) DefineConstant(constantName string, value interface{}) gomini.Object {
-	obj, ok := o.unwrap().(*goja.Object)
-	if !ok {
-		panic(errors.New("not an _object"))
-	}
+	obj := o.unwrap().(*goja.Object)
 	v := unwrapValue(value)
 	val := o.sandbox.runtime.ToValue(v)
 	if err := obj.DefineDataProperty(constantName, val, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE); err != nil {
@@ -110,10 +89,7 @@ func (o *_object) DefineConstant(constantName string, value interface{}) gomini.
 }
 
 func (o *_object) DefineSimpleProperty(propertyName string, value interface{}) gomini.Object {
-	obj, ok := o.unwrap().(*goja.Object)
-	if !ok {
-		panic(errors.New("not an _object"))
-	}
+	obj := o.unwrap().(*goja.Object)
 	v := unwrapValue(value)
 	val := o.sandbox.runtime.ToValue(v)
 	if err := obj.DefineDataProperty(propertyName, val, goja.FLAG_TRUE, goja.FLAG_FALSE, goja.FLAG_TRUE); err != nil {
@@ -123,10 +99,7 @@ func (o *_object) DefineSimpleProperty(propertyName string, value interface{}) g
 }
 
 func (o *_object) DefineObjectProperty(objectName string, objectBinder gomini.ObjectBinder) gomini.Object {
-	obj, ok := o.unwrap().(*goja.Object)
-	if !ok {
-		panic(errors.New("not an _object"))
-	}
+	obj := o.unwrap().(*goja.Object)
 	objectCreator := newObjectCreator("", o.sandbox)
 	objectBinder(gomini.ObjectBuilder(objectCreator))
 	object := objectCreator.Build()
@@ -137,13 +110,19 @@ func (o *_object) DefineObjectProperty(objectName string, objectBinder gomini.Ob
 }
 
 func (o *_object) DefineAccessorProperty(propertyName string, getter gomini.Getter, setter gomini.Setter) gomini.Object {
-	obj, ok := o.unwrap().(*goja.Object)
-	if !ok {
-		panic(errors.New("not an _object"))
-	}
+	obj := o.unwrap().(*goja.Object)
 	g := o.sandbox.runtime.ToValue(getter)
 	s := o.sandbox.runtime.ToValue(setter)
 	if err := obj.DefineAccessorProperty(propertyName, g, s, goja.FLAG_FALSE, goja.FLAG_TRUE); err != nil {
+		panic(err)
+	}
+	return o
+}
+
+func (o *_object) defineFunction(functionName, propertyName string, function interface{}) gomini.Object {
+	obj := o.unwrap().(*goja.Object)
+	f := o.sandbox.runtime.NewNamedNativeFunction(functionName, function)
+	if err := obj.DefineDataProperty(propertyName, f, goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_TRUE); err != nil {
 		panic(err)
 	}
 	return o
